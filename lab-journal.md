@@ -9,9 +9,9 @@
 
 | Device | Role | RAM |
 |--------|------|-----|
-| MacBook (Apple Silicon) | Primary workstation / Windows VM host | 48GB |
-| Mini PC #1 | Proxmox warm spare / snapshot node | 16GB DDR4 |
-| Mini PC #2 | Proxmox primary VM host | 32GB DDR4 |
+| MacBook (Apple Silicon) | Primary workstation / Windows VM host (UTM) | 48GB |
+| Mini PC #1 | Proxmox primary VM host | 32GB DDR4 |
+| Mini PC #2 | Proxmox secondary VM host | 16GB DDR4 |
 | Raspberry Pi 5 | Tailscale subnet router | — |
 
 Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
@@ -20,18 +20,17 @@ Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
 
 ## VM Inventory
 
-| VM | OS | RAM | Disk | Role |
-|----|----|-----|------|------|
-| LinuxV | Ubuntu 22.04.5 Desktop | 10GB | 60GB | Vulnerable Linux target (intentionally unpatched) |
-| LinuxA | Ubuntu 22.04.5 Desktop | 5GB | 50GB | Patched Linux analyst machine |
-| Malcolm | Ubuntu 22.04.5 Server | 12GB | 80GB | PCAP / network traffic analysis |
-| DC | Windows Server | TBD | TBD | Domain Controller + Splunk SIEM |
-| Certer | Windows Server | TBD | TBD | ADCS certificate authority |
-| Win11A | Windows 11 | TBD | TBD | Patched Windows workstation |
-| Win11V | Windows 11 | TBD | TBD | Vulnerable Windows workstation |
+| VM | OS | RAM | Disk | Host | Role |
+|----|----|-----|------|------|------|
+| LinuxV | Ubuntu 22.04.5 Desktop | 10GB | 60GB | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) |
+| LinuxA | Ubuntu 22.04.5 Desktop | 5GB | 50GB | Proxmox node 1 | Patched Linux analyst machine |
+| Malcolm | Ubuntu 22.04.5 Server | 12GB | 80GB | Proxmox node 1 | PCAP / network traffic analysis |
+| DC | Windows Server 2019 | 6GB | 60GB | Proxmox node 2 | Domain Controller + DNS |
+| Certer | Windows Server | TBD | TBD | Proxmox node 2 | ADCS certificate authority |
+| Win11A | Windows 11 | TBD | TBD | MacBook (UTM) | Patched Windows workstation |
+| Win11V | Windows 11 | TBD | TBD | MacBook (UTM) | Vulnerable Windows workstation |
 
-All Proxmox VMs use: **q35 / OVMF (UEFI) / VirtIO** with QEMU guest agent.  
-Windows VMs hosted on MacBook using **UTM** (preferred over VMware Fusion for Apple Silicon).
+All Proxmox VMs use: **q35 / OVMF (UEFI) / VirtIO** with QEMU guest agent.
 
 ---
 
@@ -39,12 +38,14 @@ Windows VMs hosted on MacBook using **UTM** (preferred over VMware Fusion for Ap
 
 ### Key decisions
 - Split VMs across physical machines based on RAM and load
-- Heavy VMs (LinuxV, Malcolm) → Mini PC #2 running Proxmox
-- Light VMs (DC, Certer, Win11A, Win11V) → MacBook using UTM
-- Mini PC #1 → Proxmox warm spare/snapshot node (no permanent VMs)
+- Node 1 (32GB): LinuxV, LinuxA, Malcolm
+- Node 2 (16GB): DC, Certer
+- MacBook (UTM): Win11A, Win11V
+- DC moved from UTM to Proxmox to enable snapshots (UTM on Apple Silicon has no snapshot support)
+- Apple Silicon has no Windows Server ARM support — x86_64 Proxmox nodes required for DC
 
 ### Lessons learned
-- Verify RAM specs physically — assumptions about which machine is "stronger" can be wrong
+- Verify RAM specs physically — assumptions about which machine is stronger can be wrong
 - DDR4 SO-DIMM prices have risen significantly; check current pricing before planning upgrades
 
 ---
@@ -83,7 +84,7 @@ Fix: Disable enterprise repo using `Enabled: no` in the `.sources` file, then ad
 
 ---
 
-## Phase 3 — VM Builds
+## Phase 3 — VM Builds (Linux)
 
 ### Ubuntu ISO note
 Course specifies Ubuntu 22.04.3 LTS, which is **no longer hosted** on Ubuntu's servers.  
@@ -92,7 +93,7 @@ Course specifies Ubuntu 22.04.3 LTS, which is **no longer hosted** on Ubuntu's s
 ### LinuxV — Vulnerable target
 - Left intentionally unpatched after clean install
 - Relevant vulnerability class: critical Linux kernel privilege escalation (kernels since v4.14)
-- Proxmox hosts on kernel 7.0 are unaffected
+- Proxmox hosts are unaffected
 - Snapshot taken immediately after clean install, before any updates
 
 ### Malcolm — PCAP analysis
@@ -179,6 +180,66 @@ sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.ke
 
 ---
 
+## Phase 6 — Domain Controller (DC) Build
+
+**Date:** 2026-05-29  
+**OS:** Windows Server 2019 Standard Evaluation  
+
+### Why DC moved from UTM to Proxmox
+Original plan had DC on MacBook via UTM. UTM on Apple Silicon has no snapshot support, which is critical for AD lab work (need to restore after attacks/misconfigurations). Moved to a Proxmox node which has full snapshot support. Additionally, Windows Server has no ARM support, making x86_64 Proxmox nodes the correct host.
+
+### VM specs
+- Machine: q35 / OVMF (UEFI)
+- CPU: host, 2 cores
+- RAM: 6GB
+- Disk: 60GB (local-lvm, SCSI, writeback, discard)
+- Network: VirtIO
+- QEMU guest agent: enabled
+
+### VirtIO drivers
+Windows Server 2019 requires VirtIO drivers for disk and network during installation. Attached `virtio-win.iso` as a second CD drive. After OS install, installed network driver from `NetKVM\2k19\amd64\netkvm.inf`.
+
+### Configuration
+- Hostname: `dc`
+- Static IP: assigned (not published)
+- Preferred DNS: self (post-promotion)
+- Alternate DNS: local gateway
+
+### AD DS installation & promotion
+- Role: Active Directory Domain Services
+- Operation: Add a new forest
+- Root domain: `<REDACTED>.local`
+- Forest functional level: Windows Server 2016
+- Domain functional level: Windows Server 2016
+- DNS Server: Yes
+- Global Catalog: Yes
+- DSRM password: configured
+- DNS delegation: No (expected warning for new internal domain)
+
+### Post-promotion
+- Server rebooted and rejoined as domain Administrator
+- Clean snapshot taken in Proxmox
+
+### Problems & fixes
+
+**Boot device selection at first boot**  
+UEFI boot menu appeared instead of booting directly from ISO.  
+Fix: Selected correct DVD-ROM from boot device menu.
+
+**"We couldn't find any drives" during Windows Setup**  
+Windows installer couldn't see the VirtIO SCSI disk.  
+Fix: Clicked "Load driver" and browsed to `vioscsi\2k19\amd64` on the VirtIO ISO.
+
+**No network after OS install**  
+Windows Server doesn't include VirtIO network drivers.  
+Fix: Installed from `NetKVM\2k19\amd64\netkvm.inf` on the VirtIO ISO.
+
+**Ctrl+Alt+Delete from Mac**  
+Cannot send Ctrl+Alt+Delete directly from Mac keyboard in Proxmox console.  
+Fix: Use "Send Key" menu in the Proxmox noVNC console toolbar.
+
+---
+
 ## Key Lessons Summary
 
 | Topic | Lesson |
@@ -192,14 +253,19 @@ sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.ke
 | Malcolm certs | Cert is inside Docker container, use `docker cp` |
 | Malcolm user | Default user is `user`, not `admin` |
 | Apple Silicon | UTM handles x86_64 emulation better than VMware Fusion |
+| Apple Silicon | No Windows Server ARM support — use x86_64 Proxmox for DC |
+| UTM snapshots | UTM on Apple Silicon has no snapshot support — use Proxmox for VMs needing snapshots |
 | Proxmox password reset | `qm guest passwd <vmid> <user>` from Proxmox shell |
+| VirtIO drivers | Required for disk AND network during Windows Server install on Proxmox |
+| Windows boot | UEFI boot menu may appear — select correct DVD-ROM manually |
 
 ---
 
 ## Pending
 
-- [ ] DC (Domain Controller) VM setup on MacBook via UTM
+- [x] DC (Domain Controller) VM setup on Proxmox
 - [ ] Certer VM setup
-- [ ] Win11A and Win11V VM setup
+- [ ] Win11A and Win11V VM setup on MacBook (UTM)
 - [ ] Splunk SIEM configuration on DC
 - [ ] PCAP work with Malcolm and Zeek
+- [ ] Join Win11A and Win11V to domain

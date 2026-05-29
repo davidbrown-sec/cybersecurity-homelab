@@ -11,7 +11,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | Hypervisor & Infrastructure | Proxmox VE 9.1, UTM (Apple Silicon), Proxmox clustering |
 | Network Traffic Analysis | Malcolm 26.04.1, Zeek, Arkime, OpenSearch Dashboards |
 | SIEM | Splunk (in progress) |
-| Active Directory | Windows Server, Domain Controller, ADCS (certificate authority) |
+| Active Directory | Windows Server 2019, Domain Controller, ADCS (certificate authority) |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Containerization | Docker, Docker Compose |
 | Remote Access | Tailscale mesh VPN |
@@ -28,12 +28,14 @@ A hands-on home lab built to support structured offensive and defensive security
 │  ┌──────────────┐        ┌──────────────────────┐  │
 │  │  Proxmox     │        │  MacBook (Apple       │  │
 │  │  Cluster     │        │  Silicon) - UTM       │  │
-│  │              │        │                       │  │
-│  │  • LinuxV    │        │  • DC (Domain Ctrl)   │  │
-│  │  • LinuxA    │        │  • Certer (ADCS)      │  │
-│  │  • Malcolm   │        │  • Win11A (patched)   │  │
-│  │              │        │  • Win11V (vuln.)     │  │
-│  └──────────────┘        └──────────────────────┘  │
+│  │  (2 nodes)   │        │                      │  │
+│  │              │        │  • Win11A (patched)   │  │
+│  │  • LinuxV    │        │  • Win11V (vuln.)     │  │
+│  │  • LinuxA    │        └──────────────────────┘  │
+│  │  • Malcolm   │                                   │
+│  │  • DC        │                                   │
+│  │  • Certer    │                                   │
+│  └──────────────┘                                   │
 │                                                     │
 │  ┌──────────────┐                                   │
 │  │ Raspberry    │  ← Tailscale subnet router        │
@@ -46,15 +48,15 @@ A hands-on home lab built to support structured offensive and defensive security
 
 ## VM Inventory
 
-| VM | OS | Role |
-|----|----|------|
-| LinuxV | Ubuntu 22.04.5 | Vulnerable Linux target (intentionally unpatched) |
-| LinuxA | Ubuntu 22.04.5 | Patched Linux analyst/attacker machine |
-| Malcolm | Ubuntu 22.04.5 Server | PCAP & network traffic analysis |
-| DC | Windows Server | Domain Controller + Splunk SIEM |
-| Certer | Windows Server | Active Directory Certificate Services (ADCS) |
-| Win11A | Windows 11 | Patched Windows workstation |
-| Win11V | Windows 11 | Vulnerable Windows workstation |
+| VM | OS | Host | Role |
+|----|----|------|------|
+| LinuxV | Ubuntu 22.04.5 | Proxmox | Vulnerable Linux target (intentionally unpatched) |
+| LinuxA | Ubuntu 22.04.5 | Proxmox | Patched Linux analyst/attacker machine |
+| Malcolm | Ubuntu 22.04.5 Server | Proxmox | PCAP & network traffic analysis |
+| DC | Windows Server 2019 | Proxmox | Domain Controller + DNS |
+| Certer | Windows Server | Proxmox | Active Directory Certificate Services (ADCS) |
+| Win11A | Windows 11 | MacBook (UTM) | Patched Windows workstation |
+| Win11V | Windows 11 | MacBook (UTM) | Vulnerable Windows workstation |
 
 ---
 
@@ -81,9 +83,9 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 
 - [x] Proxmox cluster (2 nodes)
 - [x] LinuxV — vulnerable target
-- [x] LinuxA — analyst machine  
+- [x] LinuxA — analyst machine
 - [x] Malcolm — PCAP analysis (static IP, SSL cert trusted)
-- [ ] DC — Domain Controller + Splunk
+- [x] DC — Domain Controller (Windows Server 2019, promoted to domain controller)
 - [ ] Certer — ADCS
 - [ ] Win11A / Win11V — Windows workstations
 - [ ] Splunk SIEM configuration
