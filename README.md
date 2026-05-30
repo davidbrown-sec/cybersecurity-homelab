@@ -8,14 +8,14 @@ A hands-on home lab built to support structured offensive and defensive security
 
 | Area | Tools & Technologies |
 |------|---------------------|
-| Hypervisor & Infrastructure | Proxmox VE 9.1, UTM (Apple Silicon), Proxmox clustering |
+| Hypervisor & Infrastructure | Proxmox VE 9.1, Parallels Desktop (Apple Silicon), Proxmox clustering |
 | Network Traffic Analysis | Malcolm 26.04.1, Zeek, Arkime, OpenSearch Dashboards |
 | SIEM | Splunk (in progress) |
 | Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Containerization | Docker, Docker Compose |
 | Remote Access | Tailscale mesh VPN |
-| Scripting & Automation | Bash, launchd, netplan, git automation |
+| Scripting & Automation | Bash, PowerShell, netplan, git automation |
 
 ---
 
@@ -27,7 +27,7 @@ A hands-on home lab built to support structured offensive and defensive security
 │                                                     │
 │  ┌──────────────┐        ┌──────────────────────┐  │
 │  │  Proxmox     │        │  MacBook (Apple       │  │
-│  │  Cluster     │        │  Silicon) - UTM       │  │
+│  │  Cluster     │        │  Silicon) - Parallels │  │
 │  │  (2 nodes)   │        │                      │  │
 │  │              │        │  • Win11A (patched)   │  │
 │  │  • LinuxV    │        │  • Win11V (vuln.)     │  │
@@ -55,8 +55,8 @@ A hands-on home lab built to support structured offensive and defensive security
 | Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP & network traffic analysis |
 | DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS |
 | Certer | Windows Server 2019 | Proxmox node 2 | Active Directory Certificate Services (ADCS) — Enterprise Root CA |
-| Win11A | Windows 11 | MacBook (UTM) | Patched Windows workstation |
-| Win11V | Windows 11 | MacBook (UTM) | Vulnerable Windows workstation |
+| Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined |
+| Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined |
 
 ---
 
@@ -86,7 +86,9 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] LinuxA — analyst machine
 - [x] Malcolm — PCAP analysis (static IP, SSL cert trusted)
 - [x] DC — Domain Controller (Windows Server 2019, promoted to domain controller)
-- [x] Certer — ADCS Enterprise Root CA (`condef-CERTER-CA`, joined to domain)
-- [ ] Win11A / Win11V — Windows workstations
+- [x] Certer — ADCS Enterprise Root CA
+- [x] Win11A — patched workstation, domain joined
+- [x] Win11V — vulnerable workstation, domain joined
 - [ ] Splunk SIEM configuration
+- [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
