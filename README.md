@@ -11,7 +11,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | Hypervisor & Infrastructure | Proxmox VE 9.1, UTM (Apple Silicon), Proxmox clustering |
 | Network Traffic Analysis | Malcolm 26.04.1, Zeek, Arkime, OpenSearch Dashboards |
 | SIEM | Splunk (in progress) |
-| Active Directory | Windows Server 2019, Domain Controller, ADCS (certificate authority) |
+| Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Containerization | Docker, Docker Compose |
 | Remote Access | Tailscale mesh VPN |
@@ -50,11 +50,11 @@ A hands-on home lab built to support structured offensive and defensive security
 
 | VM | OS | Host | Role |
 |----|----|------|------|
-| LinuxV | Ubuntu 22.04.5 | Proxmox | Vulnerable Linux target (intentionally unpatched) |
-| LinuxA | Ubuntu 22.04.5 | Proxmox | Patched Linux analyst/attacker machine |
-| Malcolm | Ubuntu 22.04.5 Server | Proxmox | PCAP & network traffic analysis |
-| DC | Windows Server 2019 | Proxmox | Domain Controller + DNS |
-| Certer | Windows Server | Proxmox | Active Directory Certificate Services (ADCS) |
+| LinuxV | Ubuntu 22.04.5 | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) |
+| LinuxA | Ubuntu 22.04.5 | Proxmox node 1 | Patched Linux analyst/attacker machine |
+| Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP & network traffic analysis |
+| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS |
+| Certer | Windows Server 2019 | Proxmox node 2 | Active Directory Certificate Services (ADCS) — Enterprise Root CA |
 | Win11A | Windows 11 | MacBook (UTM) | Patched Windows workstation |
 | Win11V | Windows 11 | MacBook (UTM) | Vulnerable Windows workstation |
 
@@ -86,7 +86,7 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] LinuxA — analyst machine
 - [x] Malcolm — PCAP analysis (static IP, SSL cert trusted)
 - [x] DC — Domain Controller (Windows Server 2019, promoted to domain controller)
-- [ ] Certer — ADCS
+- [x] Certer — ADCS Enterprise Root CA (`condef-CERTER-CA`, joined to domain)
 - [ ] Win11A / Win11V — Windows workstations
 - [ ] Splunk SIEM configuration
 - [ ] PCAP lab exercises with Malcolm/Zeek

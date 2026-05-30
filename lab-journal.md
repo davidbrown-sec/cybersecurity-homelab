@@ -26,7 +26,7 @@ Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
 | LinuxA | Ubuntu 22.04.5 Desktop | 5GB | 50GB | Proxmox node 1 | Patched Linux analyst machine |
 | Malcolm | Ubuntu 22.04.5 Server | 12GB | 80GB | Proxmox node 1 | PCAP / network traffic analysis |
 | DC | Windows Server 2019 | 6GB | 60GB | Proxmox node 2 | Domain Controller + DNS |
-| Certer | Windows Server | TBD | TBD | Proxmox node 2 | ADCS certificate authority |
+| Certer | Windows Server 2019 | 4GB | 60GB | Proxmox node 2 | ADCS Enterprise Root CA |
 | Win11A | Windows 11 | TBD | TBD | MacBook (UTM) | Patched Windows workstation |
 | Win11V | Windows 11 | TBD | TBD | MacBook (UTM) | Vulnerable Windows workstation |
 
@@ -218,6 +218,7 @@ Windows Server 2019 requires VirtIO drivers for disk and network during installa
 
 ### Post-promotion
 - Server rebooted and rejoined as domain Administrator
+- Host firewall disabled via PowerShell: `Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False`
 - Clean snapshot taken in Proxmox
 
 ### Problems & fixes
@@ -240,6 +241,53 @@ Fix: Use "Send Key" menu in the Proxmox noVNC console toolbar.
 
 ---
 
+## Phase 7 — Certer (ADCS) Build
+
+**Date:** 2026-05-29  
+**OS:** Windows Server 2019 Standard Evaluation  
+
+### VM specs
+- Machine: q35 / OVMF (UEFI)
+- CPU: host, 2 cores
+- RAM: 4GB
+- Disk: 60GB (local-lvm, SCSI, writeback, discard)
+- Network: VirtIO
+- QEMU guest agent: enabled
+
+### Configuration
+- Hostname: `certer`
+- Static IP: assigned (not published)
+- Preferred DNS: DC IP
+- Alternate DNS: local gateway
+- IPv6 disabled on adapter (was taking DNS priority over IPv4)
+
+### Domain join
+- Joined to `<REDACTED>.local` via PowerShell: `Add-Computer -DomainName "<REDACTED>.local" -Credential <DOMAIN>\Administrator -Restart`
+- Verified with: `systeminfo | findstr /i "domain"`
+
+### ADCS installation & configuration
+- Role: Active Directory Certificate Services
+- Role service: Certification Authority only
+- Setup type: Enterprise CA (domain member)
+- CA type: Root CA
+- Private key: New
+- Cryptography: RSA, 2048-bit, SHA256
+- CA name: `<REDACTED>-CERTER-CA`
+- Validity period: 5 years
+- Database: default paths
+- Configuration result: ✅ succeeded
+
+### Post-configuration
+- Clean snapshot taken in Proxmox
+
+### Problems & fixes
+
+**Domain join failed — "domain does not exist or could not be contacted"**  
+Certer was resolving DNS via IPv6 router address instead of the DC.  
+Fix: Disabled IPv6 on the Ethernet adapter so IPv4 DNS (pointing to DC) was used exclusively.
+
+---
+
 ## Key Lessons Summary
 
 | Topic | Lesson |
@@ -258,13 +306,16 @@ Fix: Use "Send Key" menu in the Proxmox noVNC console toolbar.
 | Proxmox password reset | `qm guest passwd <vmid> <user>` from Proxmox shell |
 | VirtIO drivers | Required for disk AND network during Windows Server install on Proxmox |
 | Windows boot | UEFI boot menu may appear — select correct DVD-ROM manually |
+| IPv6 DNS priority | IPv6 DNS can take priority over IPv4 — disable IPv6 on adapter if domain join fails |
+| ADCS Enterprise CA | Requires Enterprise Admin credentials (domain admin), not local admin |
 
 ---
 
 ## Pending
 
 - [x] DC (Domain Controller) VM setup on Proxmox
-- [ ] Certer VM setup
+- [x] Certer VM setup on Proxmox
+- [ ] Disable firewall on Certer
 - [ ] Win11A and Win11V VM setup on MacBook (UTM)
 - [ ] Splunk SIEM configuration on DC
 - [ ] PCAP work with Malcolm and Zeek
