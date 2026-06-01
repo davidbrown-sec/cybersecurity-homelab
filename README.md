@@ -4,6 +4,12 @@ A hands-on home lab built to support structured offensive and defensive security
 
 ---
 
+## Lab Network Diagram
+
+![Home Lab Network Diagram](./lab-network-diagram.png)
+
+---
+
 ## Skills Demonstrated
 
 | Area | Tools & Technologies |
@@ -18,33 +24,6 @@ A hands-on home lab built to support structured offensive and defensive security
 | Containerization | Docker, Docker Compose |
 | Remote Access | Tailscale mesh VPN |
 | Scripting & Automation | Bash, PowerShell, netplan, git automation |
-
----
-
-## Lab Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Home Lab Network                   │
-│                                                     │
-│  ┌──────────────┐        ┌──────────────────────┐  │
-│  │  Proxmox     │        │  MacBook (Apple       │  │
-│  │  Cluster     │        │  Silicon) - Parallels │  │
-│  │  (2 nodes)   │        │                      │  │
-│  │              │        │  • Win11A (patched)   │  │
-│  │  • LinuxV    │        │  • Win11V (vuln.)     │  │
-│  │  • LinuxA    │        └──────────────────────┘  │
-│  │  • Malcolm   │                                   │
-│  │  • DC        │                                   │
-│  │  • Certer    │                                   │
-│  └──────────────┘                                   │
-│                                                     │
-│  ┌──────────────┐                                   │
-│  │ Raspberry    │  ← Tailscale subnet router        │
-│  │ Pi 5         │    (remote lab access)            │
-│  └──────────────┘                                   │
-└─────────────────────────────────────────────────────┘
-```
 
 ---
 
