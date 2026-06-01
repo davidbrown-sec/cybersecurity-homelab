@@ -20,15 +20,17 @@ Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
 
 ## VM Inventory
 
-| VM | OS | Host | Role |
-|----|----|------|------|
-| LinuxV | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) |
-| LinuxA | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Patched Linux analyst machine |
-| Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP / network traffic analysis |
-| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS |
-| Certer | Windows Server 2019 | Proxmox node 2 | ADCS Enterprise Root CA |
-| Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined |
-| Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined |
+| VM | OS | Host | Role | Sysmon |
+|----|----|------|------|--------|
+| LinuxV | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) | N/A |
+| LinuxA | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Patched Linux analyst machine | N/A |
+| Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP / network traffic analysis | N/A |
+| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS | ✅ |
+| Certer | Windows Server 2019 | Proxmox node 2 | ADCS Enterprise Root CA | — |
+| Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined | ✅ |
+| Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
+
+> Sysmon installed on DC, Win11A, Win11V. Not required on Certer per course curriculum.
 
 All Proxmox VMs use: **q35 / OVMF (UEFI) / VirtIO** with QEMU guest agent.
 
@@ -135,6 +137,7 @@ sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.ke
 - Domain: `<REDACTED>.local`, Forest/Domain functional level: Windows Server 2016
 - DNS + Global Catalog enabled
 - Firewall disabled: `Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False`
+- Sysmon installed and enabled ✅
 - Snapshot taken post-promotion
 
 ---
@@ -147,6 +150,7 @@ sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.ke
 - IPv6 disabled (was overriding IPv4 DNS)
 - ADCS: Enterprise CA, Root CA, RSA 2048-bit, SHA256, 5 year validity
 - CA name: `<REDACTED>-CERTER-CA`
+- Sysmon: not required per course curriculum
 - Snapshot taken post-configuration
 
 **Problem: Domain join failed**  
@@ -169,6 +173,7 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - DNS: DC IP
 - Domain joined ✅
 - Account type: Administrator
+- Sysmon installed and enabled ✅
 - Snapshot: `clean-domain-joined`
 
 ### Win11V — Vulnerable workstation  
@@ -176,11 +181,24 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - DNS: DC IP
 - Domain joined ✅
 - Account type: Standard User (realistic victim)
+- Sysmon installed and enabled ✅
 - Snapshot: `clean-domain-joined`
 
 **Common problems:**
 - Domain join fails — Parallels DNS via IPv6 taking priority. Fix: disable IPv6, set DNS manually as Administrator.
 - Bridged networking shows "Media disconnected" on Apple Silicon. Fix: use shared network with manual DNS.
+
+---
+
+## Phase 9 — Cloud Accounts
+
+### Microsoft Azure
+- Account provisioned for course curriculum
+- Planned use: cloud telemetry, identity and access management labs, detection engineering
+
+### AWS
+- Account provisioned for course curriculum
+- Planned use: CloudTrail log analysis, IAM security labs, detection engineering
 
 ---
 
@@ -209,6 +227,10 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - [x] Certer setup
 - [x] Win11A — domain joined
 - [x] Win11V — domain joined
+- [x] Sysmon — DC, Win11A, Win11V
+- [x] Azure account provisioned
+- [x] AWS account provisioned
 - [ ] Splunk SIEM configuration
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises
+- [ ] Cloud telemetry lab exercises
