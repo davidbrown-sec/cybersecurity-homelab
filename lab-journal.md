@@ -202,6 +202,40 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 
 ---
 
+## Phase 10 — Windows Auditing & GPO Configuration
+
+**Date:** 2026-06-01  
+**Applied to:** DC (via Group Policy), Win11A, Win11V  
+
+### PowerShell Logging (via GPO)
+All three settings configured under:  
+`Computer Configuration → Administrative Templates → Windows Components → Windows PowerShell`
+
+| Setting | Value |
+|---------|-------|
+| Turn on Module Logging | Enabled |
+| Turn on PowerShell Script Block Logging | Enabled |
+| Turn on PowerShell Transcription | Enabled — output directory: `C:\Transcripts` |
+| Turn on Script Execution | Not Configured |
+
+- `C:\Transcripts` folder created on DC
+- `gpupdate /force` run on all Windows machines after GPO changes
+
+### Windows Defender (via GPO)
+Disabled across the domain to allow payload testing without interference:
+
+| Setting | Value |
+|---------|-------|
+| Turn off Windows Defender Antivirus | Enabled |
+| Turn off Real-Time Protection | Enabled |
+
+> **Note:** Win11 hosts may need Defender disabled manually at test time if GPO doesn't fully suppress it for specific payloads.
+
+### Windows Event Auditing
+Configured via Group Policy for enhanced visibility across domain-joined machines.
+
+---
+
 ## Key Lessons Summary
 
 | Topic | Lesson |
@@ -218,6 +252,9 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 | IPv6 DNS priority | Disable IPv6 on adapter if domain join fails |
 | ADCS Enterprise CA | Requires domain admin credentials, not local admin |
 | PowerShell DNS cmds | Must run as Administrator |
+| GPO PowerShell logging | Module Logging + Script Block + Transcription all enabled via GPO |
+| Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
+| Win11 Defender | May need manual disable at test time even with GPO applied |
 
 ---
 
@@ -230,6 +267,11 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - [x] Sysmon — DC, Win11A, Win11V
 - [x] Azure account provisioned
 - [x] AWS account provisioned
+- [x] Windows Auditing & GPO configured
+- [x] PowerShell Module Logging, Script Block Logging, Transcription enabled via GPO
+- [x] Windows Defender disabled via GPO
+- [x] C:\Transcripts folder created on DC
+- [x] gpupdate /force run on all Windows machines
 - [ ] Splunk SIEM configuration
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises

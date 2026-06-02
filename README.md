@@ -19,6 +19,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | SIEM | Splunk (in progress) |
 | Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
 | Endpoint Telemetry | Sysmon (DC, Win11A, Win11V) |
+| Logging & Auditing | Windows Event Auditing, PowerShell Module/Script Block/Transcription logging via GPO |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Cloud Security | Azure, AWS (accounts provisioned for course curriculum) |
 | Containerization | Docker, Docker Compose |
@@ -85,6 +86,7 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] Sysmon — installed and enabled on DC, Win11A, Win11V
 - [x] Azure account provisioned
 - [x] AWS account provisioned
+- [x] Windows Auditing & GPO configured (PowerShell logging, Transcription, Defender disabled)
 - [ ] Splunk SIEM configuration
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
