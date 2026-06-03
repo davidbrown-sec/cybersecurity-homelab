@@ -19,10 +19,12 @@ A hands-on home lab built to support structured offensive and defensive security
 | SIEM | Splunk Enterprise 9.3.2 ✅ |
 | Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
 | Endpoint Telemetry | Sysmon — all 3 Windows hosts live (DC, Win11A, Win11V) ✅ |
+| Linux Telemetry | Splunk UF + Laurel/auditd on LinuxV ✅ |
+| Kubernetes Monitoring | Minikube + Splunk OpenTelemetry Collector via HEC ✅ |
 | Logging & Auditing | Windows Event Auditing, PowerShell Module/Script Block/Transcription logging via GPO |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Cloud Security | Azure, AWS (accounts provisioned for course curriculum) |
-| Containerization | Docker, Docker Compose |
+| Containerization | Docker, Docker Compose, Minikube, Helm |
 | Remote Access | Tailscale mesh VPN |
 | Scripting & Automation | Bash, PowerShell, netplan, git automation |
 
@@ -41,6 +43,19 @@ A hands-on home lab built to support structured offensive and defensive security
 | Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
 
 > Sysmon is installed on DC, Win11A, and Win11V. ARM64 Windows (Parallels) requires `Sysmon64a.exe` — the x86 binaries are blocked by HVCI. Certer does not require Sysmon per course curriculum.
+
+---
+
+## Telemetry Stack
+
+| Index | Source | Status |
+|-------|--------|--------|
+| `winlogs` | DC, Win11A, Win11V, Certer | ✅ Live |
+| `sysmon` | DC, Win11A, Win11V | ✅ Live |
+| `linux` | LinuxV (Laurel/auditd) | ✅ Live |
+| `kube` | LinuxV (Minikube audit logs) | ✅ Live |
+| `azure` | Azure telemetry | 🔜 Pending |
+| `aws` | AWS CloudTrail | 🔜 Pending |
 
 ---
 
@@ -87,7 +102,10 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] Azure account provisioned
 - [x] AWS account provisioned
 - [x] Windows Auditing & GPO configured (PowerShell logging, Transcription, Defender disabled)
-- [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
+- [x] Splunk Enterprise deployed — all Windows hosts live ✅
+- [x] LinuxV Laurel telemetry — index=linux live ✅
+- [x] Kubernetes monitoring — Minikube audit logs via HEC, index=kube live ✅
+- [ ] Cloud telemetry — AWS
+- [ ] Cloud telemetry — Azure/Entra
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
-- [ ] Cloud telemetry lab exercises
