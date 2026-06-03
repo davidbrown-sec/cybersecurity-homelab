@@ -169,81 +169,39 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - Static route added on Mac: `sudo route add -net <LAB_SUBNET> <PARALLELS_GATEWAY>`
 
 ### Win11A — Patched workstation
-- Parallels shared network, static IP assigned
-- DNS: DC IP
-- Domain joined ✅
-- Account type: Administrator
-- Sysmon installed and enabled ✅
-- Snapshot: `clean-domain-joined`
+- Domain joined ✅, Administrator account, Sysmon ✅, Snapshot: `clean-domain-joined`
 
 ### Win11V — Vulnerable workstation
-- Parallels shared network, static IP assigned
-- DNS: DC IP
-- Domain joined ✅
-- Account type: Standard User (realistic victim)
-- Sysmon installed and enabled ✅
-- Snapshot: `clean-domain-joined`
-
-**Common problems:**
-- Domain join fails — Parallels DNS via IPv6 taking priority. Fix: disable IPv6, set DNS manually as Administrator.
-- Bridged networking shows "Media disconnected" on Apple Silicon. Fix: use shared network with manual DNS.
+- Domain joined ✅, Standard User account, Sysmon ✅, Snapshot: `clean-domain-joined`
 
 ---
 
 ## Phase 9 — Cloud Accounts
 
-### Microsoft Azure
-- Account provisioned for course curriculum
-- Planned use: cloud telemetry, identity and access management labs, detection engineering
-
-### AWS
-- Account provisioned for course curriculum
-- Planned use: CloudTrail log analysis, IAM security labs, detection engineering
+- Azure: provisioned for course curriculum (telemetry, identity, detection labs)
+- AWS: provisioned for course curriculum (CloudTrail, IAM, detection labs)
 
 ---
 
 ## Phase 10 — Windows Auditing & GPO Configuration
 
 **Date:** 2026-06-01  
-**Applied to:** DC (via Group Policy), Win11A, Win11V  
-
-### PowerShell Logging (via GPO)
 
 | Setting | Value |
 |---------|-------|
-| Turn on Module Logging | Enabled |
-| Turn on PowerShell Script Block Logging | Enabled |
-| Turn on PowerShell Transcription | Enabled — output directory: `C:\Transcripts` |
-| Turn on Script Execution | Not Configured |
-
-### Windows Defender (via GPO)
-
-| Setting | Value |
-|---------|-------|
-| Turn off Windows Defender Antivirus | Enabled |
-| Turn off Real-Time Protection | Enabled |
+| PowerShell Module Logging | Enabled |
+| PowerShell Script Block Logging | Enabled |
+| PowerShell Transcription | Enabled (`C:\Transcripts`) |
+| Windows Defender Antivirus | Disabled |
+| Real-Time Protection | Disabled |
 
 ---
 
 ## Phase 11 — Splunk SIEM Deployment
 
-**Date:** 2026-06-03  
-**Version:** Splunk Enterprise 9.3.2  
+**Date:** 2026-06-03 | Splunk Enterprise 9.3.2 on DC
 
-### Indexes created
-
-| Index | Telemetry source |
-|-------|-----------------|
-| `winlogs` | Windows Event Logs |
-| `sysmon` | Sysmon operational events |
-| `linux` | Linux auditd/Laurel |
-| `azure` | Azure telemetry |
-| `aws` | CloudTrail / AWS telemetry |
-| `kube` | Kubernetes logs |
-| `etw` | ETW |
-
-### Problem & fix
-Splunk TAs ship with inputs disabled. Course zip provides `local/inputs.conf` overrides but Splunk must be restarted to load them.  
+**Problem:** No telemetry after install — Splunk TAs ship with inputs disabled; restart required after app extraction.  
 **Fix:** `Restart-Service Splunkd` → 51,055 events in `winlogs` ✅
 
 ---
@@ -252,14 +210,8 @@ Splunk TAs ship with inputs disabled. Course zip provides `local/inputs.conf` ov
 
 **Date:** 2026-06-03
 
-### Root cause chain
-1. Sysmon service stopped — binary never installed
-2. Course script downloaded `Sysmon.exe` (x86) but never ran installer
-3. x86 kernel driver blocked by HVCI on ARM64 Windows
-4. Uninstall stuck — `reg delete` + reboot required
-5. Course sysmonconfig.xml had malformed XML comment
+**Root cause:** Course `Sysmon.exe` is x86 — blocked by HVCI on ARM64 Windows (Parallels/Apple Silicon). Needed `Sysmon64a.exe` from the full Sysmon zip.
 
-### Fix
 ```powershell
 reg delete "HKLM\SYSTEM\CurrentControlSet\Services\Sysmon" /f
 Restart-Computer -Force
@@ -272,8 +224,8 @@ Restart-Service SplunkForwarder
 
 | Binary | Architecture | Works on ARM64 Windows |
 |--------|-------------|----------------------|
-| `Sysmon.exe` | x86 (32-bit) | ❌ Driver blocked by HVCI |
-| `Sysmon64.exe` | x86-64 | ❌ Driver blocked by HVCI |
+| `Sysmon.exe` | x86 | ❌ Blocked by HVCI |
+| `Sysmon64.exe` | x86-64 | ❌ Blocked by HVCI |
 | `Sysmon64a.exe` | ARM64 native | ✅ |
 
 **Result:** DC, WIN11A, WIN11V all live in `index=sysmon` ✅
@@ -284,13 +236,9 @@ Restart-Service SplunkForwarder
 
 **Date:** 2026-06-03
 
-### Pre-checks
-- auditd: active (running) ✅
-- Laurel: running as auditd child process (`/usr/local/sbin/laurel --config /etc/laurel/config.toml`) ✅
-- `/var/log/laurel/audit.log` present ✅
-- Note: `systemctl status laurel` returns "Unit not found" — normal; Laurel is an auditd plugin, not a standalone systemd service
+Only LinuxV (victim) requires the Splunk forwarder — LinuxA is the attacker machine.
 
-### Install
+**Pre-checks:** auditd running ✅, Laurel running as auditd plugin ✅, `/var/log/laurel/audit.log` present ✅
 
 ```bash
 sudo bash << 'EOF'
@@ -307,10 +255,9 @@ chown -R splunkfwd:splunkfwd /opt/splunkforwarder
 EOF
 ```
 
-> **Note:** Replace `<DC_IP>` with your DC's actual IP. Use `sudo bash << 'EOF'` to run all commands as root — using `sudo` only on the first command leaves subsequent commands unprivileged.
+> Replace `<DC_IP>` with your DC's IP. Course script uses a placeholder — always substitute before running.
 
-### Result
-668 events in `index=linux` — structured JSON Laurel audit events with `SYSCALL`, `PATH`, `CWD`, `PROCTITLE` fields ✅
+**Result:** 668 events in `index=linux` — structured JSON Laurel events ✅
 
 ---
 
@@ -333,14 +280,14 @@ EOF
 | PowerShell DNS cmds | Must run as Administrator |
 | GPO PowerShell logging | Module Logging + Script Block + Transcription all enabled via GPO |
 | Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
-| Win11 Defender | May need manual disable at test time even with GPO applied |
-| Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment for configs to load |
+| Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment |
 | Splunk Linux install | Use `sudo bash << 'EOF'` — `sudo` on first command only leaves rest unprivileged |
 | Splunk course IPs | Course scripts use placeholder IPs — replace with actual DC IP before running |
 | Sysmon on ARM64 | Use `Sysmon64a.exe` on ARM64 Windows (Parallels/Apple Silicon) — x86 driver blocked by HVCI |
 | Sysmon config XML | Course sysmonconfig.xml may have malformed XML comments — install without config if needed |
 | Sysmon broken install | Use `reg delete` + reboot to clean up a stuck Sysmon service before reinstalling |
 | Laurel service | Laurel runs as auditd plugin — `systemctl status laurel` not found is normal |
+| Linux forwarder scope | Only LinuxV (victim) needs the Splunk forwarder — LinuxA is the attacker machine |
 
 ---
 
@@ -360,7 +307,6 @@ EOF
 - [x] gpupdate /force run on all Windows machines
 - [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
 - [x] LinuxV Laurel telemetry flowing — index=linux live ✅
-- [ ] LinuxA Splunk forwarder
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises
 - [ ] Cloud telemetry lab exercises
