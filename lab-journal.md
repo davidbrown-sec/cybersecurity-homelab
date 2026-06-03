@@ -25,7 +25,7 @@ Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
 | LinuxV | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) | N/A |
 | LinuxA | Ubuntu 22.04.5 Desktop | Proxmox node 1 | Patched Linux analyst machine | N/A |
 | Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP / network traffic analysis | N/A |
-| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS | ✅ |
+| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS + Splunk SIEM | ✅ |
 | Certer | Windows Server 2019 | Proxmox node 2 | ADCS Enterprise Root CA | — |
 | Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined | ✅ |
 | Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
@@ -176,7 +176,7 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 - Sysmon installed and enabled ✅
 - Snapshot: `clean-domain-joined`
 
-### Win11V — Vulnerable workstation  
+### Win11V — Vulnerable workstation
 - Parallels shared network, static IP assigned
 - DNS: DC IP
 - Domain joined ✅
@@ -231,8 +231,51 @@ Disabled across the domain to allow payload testing without interference:
 
 > **Note:** Win11 hosts may need Defender disabled manually at test time if GPO doesn't fully suppress it for specific payloads.
 
-### Windows Event Auditing
-Configured via Group Policy for enhanced visibility across domain-joined machines.
+---
+
+## Phase 11 — Splunk SIEM Deployment
+
+**Date:** 2026-06-03  
+**Host:** DC (co-hosted, per course design)  
+**Version:** Splunk Enterprise 9.3.2  
+
+### Architecture
+Splunk Enterprise installed directly on the DC. Indexes created for all course telemetry sources. Windows workstations (Win11A, Win11V) will forward via Universal Forwarder — pending next phase.
+
+### Indexes created
+
+| Index | Telemetry source |
+|-------|-----------------|
+| `winlogs` | Windows Event Logs (Security, Application, System) |
+| `sysmon` | Sysmon operational events |
+| `linux` | Linux auditd/Laurel |
+| `azure` | Azure telemetry |
+| `aws` | CloudTrail / AWS telemetry |
+| `kube` | Kubernetes logs |
+| `etw` | ETW (Event Tracing for Windows) |
+
+### Problem & fix — no telemetry after install
+
+**Symptom:** No events in `sysmon` or `winlogs` indexes after running the install script.
+
+**Root cause:** Splunk Technology Add-ons (`Splunk_TA_windows`, `Splunk_TA_microsoft_sysmon`) ship with all inputs **disabled** by default. The course app package provides `local/inputs.conf` overrides to enable them, but Splunk must be restarted after extraction for configs to take effect.
+
+**Fix:** `Restart-Service Splunkd`
+
+**Result:** 51,055 events in `winlogs` within minutes; indexing rate 15.57 KB/s ✅
+
+### Verification queries
+```splunk
+index=winlogs earliest=-5m
+index=sysmon earliest=-5m
+index=sysmon OR index=winlogs | stats count by host, sourcetype
+```
+
+### Pending — Universal Forwarder on Win11A / Win11V
+Win11A and Win11V need the Splunk Universal Forwarder installed and pointed at the DC on port 9997. Once deployed, verify all three hosts appear:
+```splunk
+index=winlogs OR index=sysmon | stats count by host
+```
 
 ---
 
@@ -255,6 +298,7 @@ Configured via Group Policy for enhanced visibility across domain-joined machine
 | GPO PowerShell logging | Module Logging + Script Block + Transcription all enabled via GPO |
 | Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
 | Win11 Defender | May need manual disable at test time even with GPO applied |
+| Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment for configs to load |
 
 ---
 
@@ -272,7 +316,8 @@ Configured via Group Policy for enhanced visibility across domain-joined machine
 - [x] Windows Defender disabled via GPO
 - [x] C:\Transcripts folder created on DC
 - [x] gpupdate /force run on all Windows machines
-- [ ] Splunk SIEM configuration
+- [x] Splunk Enterprise deployed on DC — winlogs and sysmon live ✅
+- [ ] Splunk Universal Forwarder on Win11A / Win11V
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises
 - [ ] Cloud telemetry lab exercises
