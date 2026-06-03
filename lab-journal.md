@@ -56,73 +56,34 @@ All Proxmox VMs use: **q35 / OVMF (UEFI) / VirtIO** with QEMU guest agent.
 
 **Proxmox version:** 9.1 (Debian **trixie** base)
 
-### Proxmox 9.1 — key differences from older versions
-
 | Topic | Detail |
 |-------|--------|
 | Debian base | **trixie** (not bookworm) |
 | Repo file format | `.sources` (not `.list`) |
-| Disabling enterprise repo | Set `Enabled: no` — commenting out the `deb` line does NOT work |
+| Disabling enterprise repo | Set `Enabled: no` — commenting out does NOT work |
 | DNS permanence | Must add `dns-nameservers` to `/etc/network/interfaces` |
-
-### No-subscription repo config
-```
-Types: deb
-URIs: http://download.proxmox.com/debian/pve
-Suites: trixie
-Components: pve-no-subscription
-Enabled: yes
-```
 
 ---
 
 ## Phase 3 — VM Builds (Linux)
 
-### Ubuntu ISO note
-Course specifies Ubuntu 22.04.3 LTS — **no longer hosted**. Use **Ubuntu 22.04.5 LTS** instead.
+Ubuntu 22.04.3 LTS no longer hosted — use **22.04.5 LTS**.
 
-### Malcolm — PCAP analysis
-Running **Malcolm 26.04.1** via Docker.
-
-**Problem: Docker Compose version too old**  
-Fix: Install Docker Compose v5.1.3 manually:
-```bash
-sudo curl -L "https://github.com/docker/compose/releases/download/v5.1.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
-```
+Malcolm 26.04.1 via Docker. Docker Compose v5.1.3 required (install manually; apt version too old).
 
 ---
 
 ## Phase 4 — Malcolm Static IP
 
-```yaml
-network:
-  version: 2
-  ethernets:
-    <INTERFACE>:
-      dhcp4: no
-      addresses:
-        - <YOUR_MALCOLM_IP>/24
-      routes:
-        - to: default
-          via: <YOUR_GATEWAY>
-      nameservers:
-        addresses: [8.8.8.8, 8.8.4.4]
-```
+Netplan file: `/etc/netplan/50-cloud-init.yaml`. Apply with `sudo netplan apply`.
 
 ---
 
 ## Phase 5 — Malcolm SSL Certificate Trust (macOS)
 
 ```bash
-# Extract cert from Docker container
 docker cp malcolm-nginx-proxy-1:/etc/nginx/certs/cert.pem /home/<user>/malcolm.crt
-
-# Copy to Mac
 scp <user>@<malcolm-ip>:/home/<user>/malcolm.crt ~/Desktop/malcolm.crt
-
-# Trust via Terminal (GUI import fails)
 sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.keychain ~/Desktop/malcolm.crt
 ```
 
@@ -130,62 +91,38 @@ sudo security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.ke
 
 ## Phase 6 — Domain Controller (DC) Build
 
-- OS: Windows Server 2019
-- Machine: q35 / OVMF / VirtIO, 2 cores, 6GB RAM, 60GB disk
-- VirtIO drivers required for disk (`vioscsi\2k19\amd64`) and network (`NetKVM\2k19\amd64`)
-- Role: AD DS, promoted to domain controller
-- Domain: `<REDACTED>.local`, Forest/Domain functional level: Windows Server 2016
-- DNS + Global Catalog enabled
-- Firewall disabled: `Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False`
-- Sysmon installed and enabled ✅
-- Snapshot taken post-promotion
+- Windows Server 2019, q35/OVMF/VirtIO, 2 cores, 6GB RAM, 60GB disk
+- VirtIO drivers required for disk and network
+- AD DS promoted, Windows Server 2016 FL, Sysmon ✅, snapshot taken
 
 ---
 
 ## Phase 7 — Certer (ADCS) Build
 
-- OS: Windows Server 2019
-- Machine: q35 / OVMF / VirtIO, 2 cores, 4GB RAM, 60GB disk
-- Joined to domain, DNS pointing to DC
-- IPv6 disabled (was overriding IPv4 DNS)
-- ADCS: Enterprise CA, Root CA, RSA 2048-bit, SHA256, 5 year validity
-- CA name: `<REDACTED>-CERTER-CA`
-- Sysmon: not required per course curriculum
-- Snapshot taken post-configuration
-
-**Problem: Domain join failed**  
-IPv6 DNS taking priority over IPv4.  
-Fix: Disable IPv6 on adapter via `ncpa.cpl`.
+- Windows Server 2019, Enterprise Root CA, RSA 2048-bit, SHA256, 5 year validity
+- IPv6 disabled (was overriding IPv4 DNS — caused domain join failure)
+- Sysmon: not required per course curriculum, snapshot taken
 
 ---
 
 ## Phase 8 — Windows 11 Workstations
 
-### Network architecture
-Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). Bridged networking unreliable on Apple Silicon. Working solution:
-- Static IPs on Parallels shared network
-- DNS manually set to DC IP via elevated PowerShell
-- IPv6 disabled on adapter
-- Static route added on Mac: `sudo route add -net <LAB_SUBNET> <PARALLELS_GATEWAY>`
+Parallels shared network (separate subnet). Static IPs, DNS → DC, IPv6 disabled, static route on Mac.
 
-### Win11A — Patched workstation
-- Domain joined ✅, Administrator account, Sysmon ✅, Snapshot: `clean-domain-joined`
-
-### Win11V — Vulnerable workstation
-- Domain joined ✅, Standard User account, Sysmon ✅, Snapshot: `clean-domain-joined`
+- Win11A: Administrator, Sysmon ✅, domain joined ✅
+- Win11V: Standard User, Sysmon ✅, domain joined ✅
 
 ---
 
 ## Phase 9 — Cloud Accounts
 
-- Azure: provisioned for course curriculum (telemetry, identity, detection labs)
-- AWS: provisioned for course curriculum (CloudTrail, IAM, detection labs)
+Azure and AWS accounts provisioned for course curriculum.
 
 ---
 
 ## Phase 10 — Windows Auditing & GPO Configuration
 
-**Date:** 2026-06-01  
+**Date:** 2026-06-01
 
 | Setting | Value |
 |---------|-------|
@@ -199,10 +136,12 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 
 ## Phase 11 — Splunk SIEM Deployment
 
-**Date:** 2026-06-03 | Splunk Enterprise 9.3.2 on DC
+**Date:** 2026-06-03 | Splunk Enterprise 9.3.2
 
-**Problem:** No telemetry after install — Splunk TAs ship with inputs disabled; restart required after app extraction.  
-**Fix:** `Restart-Service Splunkd` → 51,055 events in `winlogs` ✅
+Indexes: `winlogs`, `sysmon`, `linux`, `azure`, `aws`, `kube`, `etw`. Receiving on port 9997.
+
+**Problem:** Splunk TAs ship with inputs disabled — restart required after app extraction.  
+**Fix:** Restart Splunk → 51,055 events in `winlogs` ✅
 
 ---
 
@@ -210,7 +149,7 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 
 **Date:** 2026-06-03
 
-**Root cause:** Course `Sysmon.exe` is x86 — blocked by HVCI on ARM64 Windows (Parallels/Apple Silicon). Needed `Sysmon64a.exe` from the full Sysmon zip.
+Course `Sysmon.exe` (x86) blocked by HVCI on ARM64 Windows. Solution: `Sysmon64a.exe` from full Sysmon zip.
 
 ```powershell
 reg delete "HKLM\SYSTEM\CurrentControlSet\Services\Sysmon" /f
@@ -222,10 +161,10 @@ C:\SysmonFiles\Sysmon64a.exe -accepteula -i
 Restart-Service SplunkForwarder
 ```
 
-| Binary | Architecture | Works on ARM64 Windows |
-|--------|-------------|----------------------|
-| `Sysmon.exe` | x86 | ❌ Blocked by HVCI |
-| `Sysmon64.exe` | x86-64 | ❌ Blocked by HVCI |
+| Binary | Architecture | ARM64 Windows |
+|--------|-------------|---------------|
+| `Sysmon.exe` | x86 | ❌ Blocked |
+| `Sysmon64.exe` | x86-64 | ❌ Blocked |
 | `Sysmon64a.exe` | ARM64 native | ✅ |
 
 **Result:** DC, WIN11A, WIN11V all live in `index=sysmon` ✅
@@ -234,11 +173,9 @@ Restart-Service SplunkForwarder
 
 ## Phase 13 — Splunk Forwarder on LinuxV (Laurel Telemetry)
 
-**Date:** 2026-06-03
+**Date:** 2026-06-03 | LinuxV only (LinuxA is the attacker machine)
 
-Only LinuxV (victim) requires the Splunk forwarder — LinuxA is the attacker machine.
-
-**Pre-checks:** auditd running ✅, Laurel running as auditd plugin ✅, `/var/log/laurel/audit.log` present ✅
+Laurel runs as auditd plugin — `systemctl status laurel` returning "Unit not found" is normal.
 
 ```bash
 sudo bash << 'EOF'
@@ -257,7 +194,120 @@ EOF
 
 > Replace `<DC_IP>` with your DC's IP. Course script uses a placeholder — always substitute before running.
 
-**Result:** 668 events in `index=linux` — structured JSON Laurel events ✅
+**Result:** 668 events in `index=linux` ✅
+
+---
+
+## Phase 14 — Kubernetes Monitoring (Minikube + Splunk HEC)
+
+**Date:** 2026-06-03  
+**Host:** LinuxV  
+**Stack:** Minikube v1.38.1, Kubernetes v1.35.1, Helm, Splunk OpenTelemetry Collector
+
+### Steps
+
+```bash
+# 1. Create audit policy directory (required before writing the file)
+mkdir -p ~/.minikube/files/etc/ssl/certs/
+
+# 2. Stop Minikube
+minikube stop
+
+# 3. Write audit policy (no environment-specific values — use as-is)
+cat <<EOF > ~/.minikube/files/etc/ssl/certs/audit-policy.yaml
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - "RequestReceived"
+rules:
+  - level: RequestResponse
+    resources:
+    - group: ""
+      resources: ["pods"]
+  - level: Metadata
+    resources:
+    - group: ""
+      resources: ["pods/log", "pods/status"]
+  - level: None
+    resources:
+    - group: ""
+      resources: ["configmaps"]
+      resourceNames: ["controller-leader"]
+  - level: None
+    users: ["system:kube-proxy"]
+    verbs: ["watch"]
+    resources:
+    - group: ""
+      resources: ["endpoints", "services"]
+  - level: None
+    userGroups: ["system:authenticated"]
+    nonResourceURLs: ["/api*", "/version"]
+  - level: Request
+    resources:
+    - group: ""
+      resources: ["configmaps"]
+    namespaces: ["kube-system"]
+  - level: Metadata
+    resources:
+    - group: ""
+      resources: ["secrets", "configmaps"]
+  - level: Request
+    resources:
+    - group: ""
+    - group: "extensions"
+  - level: Metadata
+    omitStages:
+      - "RequestReceived"
+EOF
+
+# 4. Start Minikube with audit logging
+minikube start \
+  --extra-config=apiserver.audit-policy-file=/etc/ssl/certs/audit-policy.yaml \
+  --extra-config=apiserver.audit-log-path=-
+```
+
+**5. Create Splunk HEC token:**
+- Settings → Add Data → Monitor → HTTP Event Collector
+- Name: `K8s`, Index: `kube`
+- Settings → Data Inputs → HTTP Event Collector → Global Settings → Enable, uncheck SSL → Save
+- Copy the token value
+
+**6. Deploy Splunk collector via Helm:**
+```bash
+helm repo add splunk-otel-collector-chart https://signalfx.github.io/splunk-otel-collector-chart
+
+helm install my-splunk-otel-collector \
+  --set="splunkPlatform.endpoint=http://<DC_IP>:8088/services/collector,\
+splunkPlatform.token=<HEC_TOKEN>,\
+splunkPlatform.index=kube,\
+clusterName=<REDACTED>,\
+logsEngine=otel,\
+splunkPlatform.logsEnabled=true" \
+  splunk-otel-collector-chart/splunk-otel-collector
+```
+
+> Replace `<DC_IP>` with DC IP and `<HEC_TOKEN>` with token from Splunk. Course uses placeholder IP — substitute before running.
+
+### Problem & fix
+First attempt failed: audit policy heredoc wrote to a non-existent path.  
+**Fix:** `mkdir -p ~/.minikube/files/etc/ssl/certs/` before running the heredoc.
+
+### Result
+2,493 Kubernetes audit events in `index=kube` ✅  
+Fields: `apiVersion: audit.k8s.io/v1`, `kind: Event`, `auditID`, `requestURI`, `stage: ResponseComplete`
+
+---
+
+## Telemetry Stack — Complete
+
+| Index | Source | Status |
+|-------|--------|--------|
+| `winlogs` | DC, Win11A, Win11V, Certer | ✅ |
+| `sysmon` | DC, Win11A, Win11V | ✅ |
+| `linux` | LinuxV (Laurel/auditd) | ✅ |
+| `kube` | LinuxV (Minikube audit logs) | ✅ |
+| `azure` | Azure (pending) | 🔜 |
+| `aws` | AWS (pending) | 🔜 |
 
 ---
 
@@ -271,23 +321,19 @@ EOF
 | Malcolm startup | Never run as root |
 | VirtIO on Linux | VirtIO drivers built into Linux kernel — no extra ISO needed |
 | Apple Silicon | No Windows Server ARM support — use Proxmox for DC |
-| UTM/Parallels snapshots | No snapshot support in UTM; use Proxmox for VMs needing snapshots |
 | Parallels networking | Shared network on separate subnet — use static route + manual DNS |
-| Parallels bridged | Unreliable on Apple Silicon — use shared network workaround |
 | VirtIO drivers | Required for disk AND network during Windows Server install |
 | IPv6 DNS priority | Disable IPv6 on adapter if domain join fails |
-| ADCS Enterprise CA | Requires domain admin credentials, not local admin |
-| PowerShell DNS cmds | Must run as Administrator |
 | GPO PowerShell logging | Module Logging + Script Block + Transcription all enabled via GPO |
-| Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
 | Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment |
 | Splunk Linux install | Use `sudo bash << 'EOF'` — `sudo` on first command only leaves rest unprivileged |
 | Splunk course IPs | Course scripts use placeholder IPs — replace with actual DC IP before running |
-| Sysmon on ARM64 | Use `Sysmon64a.exe` on ARM64 Windows (Parallels/Apple Silicon) — x86 driver blocked by HVCI |
-| Sysmon config XML | Course sysmonconfig.xml may have malformed XML comments — install without config if needed |
-| Sysmon broken install | Use `reg delete` + reboot to clean up a stuck Sysmon service before reinstalling |
+| Sysmon on ARM64 | Use `Sysmon64a.exe` on ARM64 Windows — x86 driver blocked by HVCI |
+| Sysmon broken install | Use `reg delete` + reboot to clean up stuck Sysmon service |
 | Laurel service | Laurel runs as auditd plugin — `systemctl status laurel` not found is normal |
-| Linux forwarder scope | Only LinuxV (victim) needs the Splunk forwarder — LinuxA is the attacker machine |
+| Linux forwarder scope | Only LinuxV (victim) needs the Splunk forwarder |
+| Minikube audit dir | Create `~/.minikube/files/etc/ssl/certs/` before writing audit policy |
+| Splunk HEC SSL | Disable SSL on HEC global settings for plain HTTP helm chart endpoint |
 
 ---
 
@@ -297,16 +343,14 @@ EOF
 - [x] Certer setup
 - [x] Win11A — domain joined
 - [x] Win11V — domain joined
-- [x] Sysmon — DC, Win11A, Win11V all live in index=sysmon ✅
+- [x] Sysmon — DC, Win11A, Win11V all live ✅
 - [x] Azure account provisioned
 - [x] AWS account provisioned
 - [x] Windows Auditing & GPO configured
-- [x] PowerShell Module Logging, Script Block Logging, Transcription enabled via GPO
-- [x] Windows Defender disabled via GPO
-- [x] C:\Transcripts folder created on DC
-- [x] gpupdate /force run on all Windows machines
-- [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
-- [x] LinuxV Laurel telemetry flowing — index=linux live ✅
-- [ ] Domain user accounts
+- [x] Splunk Enterprise deployed — all Windows hosts live ✅
+- [x] LinuxV Laurel telemetry — index=linux live ✅
+- [x] Kubernetes monitoring — index=kube live ✅
+- [ ] Cloud telemetry — AWS
+- [ ] Cloud telemetry — Azure/Entra
+- [ ] Create domain users in AD
 - [ ] PCAP lab exercises
-- [ ] Cloud telemetry lab exercises
