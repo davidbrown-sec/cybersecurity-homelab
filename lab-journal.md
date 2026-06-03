@@ -208,8 +208,6 @@ Parallels on Apple Silicon uses shared network (separate subnet from lab LAN). B
 **Applied to:** DC (via Group Policy), Win11A, Win11V  
 
 ### PowerShell Logging (via GPO)
-All three settings configured under:  
-`Computer Configuration → Administrative Templates → Windows Components → Windows PowerShell`
 
 | Setting | Value |
 |---------|-------|
@@ -218,58 +216,35 @@ All three settings configured under:
 | Turn on PowerShell Transcription | Enabled — output directory: `C:\Transcripts` |
 | Turn on Script Execution | Not Configured |
 
-- `C:\Transcripts` folder created on DC
-- `gpupdate /force` run on all Windows machines after GPO changes
-
 ### Windows Defender (via GPO)
-Disabled across the domain to allow payload testing without interference:
 
 | Setting | Value |
 |---------|-------|
 | Turn off Windows Defender Antivirus | Enabled |
 | Turn off Real-Time Protection | Enabled |
 
-> **Note:** Win11 hosts may need Defender disabled manually at test time if GPO doesn't fully suppress it for specific payloads.
-
 ---
 
 ## Phase 11 — Splunk SIEM Deployment
 
 **Date:** 2026-06-03  
-**Host:** DC (co-hosted, per course design)  
 **Version:** Splunk Enterprise 9.3.2  
-
-### Architecture
-Splunk Enterprise installed directly on the DC. Indexes created for all course telemetry sources. Windows workstations forward via Universal Forwarder on port 9997.
 
 ### Indexes created
 
 | Index | Telemetry source |
 |-------|-----------------|
-| `winlogs` | Windows Event Logs (Security, Application, System) |
+| `winlogs` | Windows Event Logs |
 | `sysmon` | Sysmon operational events |
 | `linux` | Linux auditd/Laurel |
 | `azure` | Azure telemetry |
 | `aws` | CloudTrail / AWS telemetry |
 | `kube` | Kubernetes logs |
-| `etw` | ETW (Event Tracing for Windows) |
+| `etw` | ETW |
 
-### Problem & fix — no telemetry after install
-
-**Symptom:** No events in `sysmon` or `winlogs` indexes after running the install script.
-
-**Root cause:** Splunk Technology Add-ons (`Splunk_TA_windows`, `Splunk_TA_microsoft_sysmon`) ship with all inputs **disabled** by default. The course app package provides `local/inputs.conf` overrides to enable them, but Splunk must be restarted after extraction for configs to take effect.
-
-**Fix:** `Restart-Service Splunkd`
-
-**Result:** 51,055 events in `winlogs` within minutes; indexing rate 15.57 KB/s ✅
-
-### Verification queries
-```splunk
-index=winlogs earliest=-5m
-index=sysmon earliest=-5m
-index=sysmon OR index=winlogs | stats count by host, sourcetype
-```
+### Problem & fix
+Splunk TAs ship with inputs disabled. Course zip provides `local/inputs.conf` overrides but Splunk must be restarted to load them.  
+**Fix:** `Restart-Service Splunkd` → 51,055 events in `winlogs` ✅
 
 ---
 
@@ -277,39 +252,23 @@ index=sysmon OR index=winlogs | stats count by host, sourcetype
 
 **Date:** 2026-06-03
 
-### Problem
-After the Splunk Universal Forwarder was installed on Win11A and Win11V, `index=sysmon` only showed DC. The forwarder config was correct but no Sysmon events were being generated on either machine.
-
 ### Root cause chain
-
-1. **Sysmon service was Stopped** — the service existed in the registry but could not start
-2. **Sysmon binary missing from `C:\Windows\`** — the course script downloaded `Sysmon.exe` to `C:\SysmonFiles\` but never ran the installer, so the driver was never actually installed
-3. **Install attempts failed: "driver blocked from loading"** — Win11 on Parallels (Apple Silicon) runs ARM64 Windows. The course-downloaded `Sysmon.exe` is an x86 binary. Windows ARM64 blocks x86 kernel drivers via HVCI (Virtualization Based Security / Memory Integrity)
-4. **Uninstall was stuck** — broken partial install left the service registered but the driver binary missing, causing `-u force` to fail with "Access is denied"
-5. **Sysmon config XML was malformed** — `C:\SysmonFiles\sysmonconfig.xml` contained an invalid XML comment (`<!--SCPTAG: Sysmon Modular-->`), causing config load to fail
+1. Sysmon service stopped — binary never installed
+2. Course script downloaded `Sysmon.exe` (x86) but never ran installer
+3. x86 kernel driver blocked by HVCI on ARM64 Windows
+4. Uninstall stuck — `reg delete` + reboot required
+5. Course sysmonconfig.xml had malformed XML comment
 
 ### Fix
-
 ```powershell
-# 1. Clean up broken registry entry
 reg delete "HKLM\SYSTEM\CurrentControlSet\Services\Sysmon" /f
-
-# 2. Reboot to release kernel driver lock
 Restart-Computer -Force
-
-# 3. After reboot — download full Sysmon zip (includes ARM64 binary)
+# After reboot:
 Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile "C:\SysmonFiles\Sysmon_new.zip"
 Expand-Archive -Path "C:\SysmonFiles\Sysmon_new.zip" -DestinationPath "C:\SysmonFiles\" -Force
-
-# 4. Install using ARM64 native binary
 C:\SysmonFiles\Sysmon64a.exe -accepteula -i
-
-# 5. Restart forwarder
 Restart-Service SplunkForwarder
 ```
-
-### Key lesson
-**On ARM64 Windows (Parallels on Apple Silicon), use `Sysmon64a.exe`** — not `Sysmon.exe` (x86) or `Sysmon64.exe` (x86-64). The ARM64 native binary is only included in the full Sysmon zip download, not as a standalone download.
 
 | Binary | Architecture | Works on ARM64 Windows |
 |--------|-------------|----------------------|
@@ -317,8 +276,41 @@ Restart-Service SplunkForwarder
 | `Sysmon64.exe` | x86-64 | ❌ Driver blocked by HVCI |
 | `Sysmon64a.exe` | ARM64 native | ✅ |
 
+**Result:** DC, WIN11A, WIN11V all live in `index=sysmon` ✅
+
+---
+
+## Phase 13 — Splunk Forwarder on LinuxV (Laurel Telemetry)
+
+**Date:** 2026-06-03
+
+### Pre-checks
+- auditd: active (running) ✅
+- Laurel: running as auditd child process (`/usr/local/sbin/laurel --config /etc/laurel/config.toml`) ✅
+- `/var/log/laurel/audit.log` present ✅
+- Note: `systemctl status laurel` returns "Unit not found" — normal; Laurel is an auditd plugin, not a standalone systemd service
+
+### Install
+
+```bash
+sudo bash << 'EOF'
+apt-get install -y curl
+mkdir /opt/splunkforwarder
+wget -O /opt/splunkforwarder/splunk.deb "https://download.splunk.com/products/universalforwarder/releases/9.3.2/linux/splunkforwarder-9.3.2-d8bb32809498-linux-2.6-amd64.deb"
+useradd -m splunkfwd
+groupadd splunkfwd
+dpkg -i /opt/splunkforwarder/splunk.deb
+chown -R splunkfwd:splunkfwd /opt/splunkforwarder
+/opt/splunkforwarder/bin/splunk add forward-server <DC_IP>:9997 --accept-license --answer-yes --no-prompt
+/opt/splunkforwarder/bin/splunk add monitor /var/log/laurel/audit.log -index linux
+/opt/splunkforwarder/bin/splunk start
+EOF
+```
+
+> **Note:** Replace `<DC_IP>` with your DC's actual IP. Use `sudo bash << 'EOF'` to run all commands as root — using `sudo` only on the first command leaves subsequent commands unprivileged.
+
 ### Result
-All three hosts reporting to `index=sysmon`: **DC, WIN11A, WIN11V** ✅
+668 events in `index=linux` — structured JSON Laurel audit events with `SYSCALL`, `PATH`, `CWD`, `PROCTITLE` fields ✅
 
 ---
 
@@ -330,6 +322,7 @@ All three hosts reporting to `index=sysmon`: **DC, WIN11A, WIN11V** ✅
 | Ubuntu ISO | 22.04.3 no longer hosted; use 22.04.5 |
 | Docker Compose | Install v5.1.3 manually; apt version too old for Malcolm |
 | Malcolm startup | Never run as root |
+| VirtIO on Linux | VirtIO drivers built into Linux kernel — no extra ISO needed |
 | Apple Silicon | No Windows Server ARM support — use Proxmox for DC |
 | UTM/Parallels snapshots | No snapshot support in UTM; use Proxmox for VMs needing snapshots |
 | Parallels networking | Shared network on separate subnet — use static route + manual DNS |
@@ -342,9 +335,12 @@ All three hosts reporting to `index=sysmon`: **DC, WIN11A, WIN11V** ✅
 | Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
 | Win11 Defender | May need manual disable at test time even with GPO applied |
 | Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment for configs to load |
+| Splunk Linux install | Use `sudo bash << 'EOF'` — `sudo` on first command only leaves rest unprivileged |
+| Splunk course IPs | Course scripts use placeholder IPs — replace with actual DC IP before running |
 | Sysmon on ARM64 | Use `Sysmon64a.exe` on ARM64 Windows (Parallels/Apple Silicon) — x86 driver blocked by HVCI |
 | Sysmon config XML | Course sysmonconfig.xml may have malformed XML comments — install without config if needed |
 | Sysmon broken install | Use `reg delete` + reboot to clean up a stuck Sysmon service before reinstalling |
+| Laurel service | Laurel runs as auditd plugin — `systemctl status laurel` not found is normal |
 
 ---
 
@@ -363,6 +359,8 @@ All three hosts reporting to `index=sysmon`: **DC, WIN11A, WIN11V** ✅
 - [x] C:\Transcripts folder created on DC
 - [x] gpupdate /force run on all Windows machines
 - [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
+- [x] LinuxV Laurel telemetry flowing — index=linux live ✅
+- [ ] LinuxA Splunk forwarder
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises
 - [ ] Cloud telemetry lab exercises
