@@ -30,7 +30,7 @@ Remote access via **Tailscale** mesh VPN with Pi 5 as subnet router.
 | Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined | ✅ |
 | Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
 
-> Sysmon installed on DC, Win11A, Win11V. Not required on Certer per course curriculum.
+> Sysmon installed on DC, Win11A, Win11V. ARM64 Windows (Parallels) requires `Sysmon64a.exe`. Not required on Certer per course curriculum.
 
 All Proxmox VMs use: **q35 / OVMF (UEFI) / VirtIO** with QEMU guest agent.
 
@@ -240,7 +240,7 @@ Disabled across the domain to allow payload testing without interference:
 **Version:** Splunk Enterprise 9.3.2  
 
 ### Architecture
-Splunk Enterprise installed directly on the DC. Indexes created for all course telemetry sources. Windows workstations (Win11A, Win11V) will forward via Universal Forwarder — pending next phase.
+Splunk Enterprise installed directly on the DC. Indexes created for all course telemetry sources. Windows workstations forward via Universal Forwarder on port 9997.
 
 ### Indexes created
 
@@ -271,11 +271,54 @@ index=sysmon earliest=-5m
 index=sysmon OR index=winlogs | stats count by host, sourcetype
 ```
 
-### Pending — Universal Forwarder on Win11A / Win11V
-Win11A and Win11V need the Splunk Universal Forwarder installed and pointed at the DC on port 9997. Once deployed, verify all three hosts appear:
-```splunk
-index=winlogs OR index=sysmon | stats count by host
+---
+
+## Phase 12 — Sysmon on Win11A & Win11V (ARM64 Fix)
+
+**Date:** 2026-06-03
+
+### Problem
+After the Splunk Universal Forwarder was installed on Win11A and Win11V, `index=sysmon` only showed DC. The forwarder config was correct but no Sysmon events were being generated on either machine.
+
+### Root cause chain
+
+1. **Sysmon service was Stopped** — the service existed in the registry but could not start
+2. **Sysmon binary missing from `C:\Windows\`** — the course script downloaded `Sysmon.exe` to `C:\SysmonFiles\` but never ran the installer, so the driver was never actually installed
+3. **Install attempts failed: "driver blocked from loading"** — Win11 on Parallels (Apple Silicon) runs ARM64 Windows. The course-downloaded `Sysmon.exe` is an x86 binary. Windows ARM64 blocks x86 kernel drivers via HVCI (Virtualization Based Security / Memory Integrity)
+4. **Uninstall was stuck** — broken partial install left the service registered but the driver binary missing, causing `-u force` to fail with "Access is denied"
+5. **Sysmon config XML was malformed** — `C:\SysmonFiles\sysmonconfig.xml` contained an invalid XML comment (`<!--SCPTAG: Sysmon Modular-->`), causing config load to fail
+
+### Fix
+
+```powershell
+# 1. Clean up broken registry entry
+reg delete "HKLM\SYSTEM\CurrentControlSet\Services\Sysmon" /f
+
+# 2. Reboot to release kernel driver lock
+Restart-Computer -Force
+
+# 3. After reboot — download full Sysmon zip (includes ARM64 binary)
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Sysmon.zip" -OutFile "C:\SysmonFiles\Sysmon_new.zip"
+Expand-Archive -Path "C:\SysmonFiles\Sysmon_new.zip" -DestinationPath "C:\SysmonFiles\" -Force
+
+# 4. Install using ARM64 native binary
+C:\SysmonFiles\Sysmon64a.exe -accepteula -i
+
+# 5. Restart forwarder
+Restart-Service SplunkForwarder
 ```
+
+### Key lesson
+**On ARM64 Windows (Parallels on Apple Silicon), use `Sysmon64a.exe`** — not `Sysmon.exe` (x86) or `Sysmon64.exe` (x86-64). The ARM64 native binary is only included in the full Sysmon zip download, not as a standalone download.
+
+| Binary | Architecture | Works on ARM64 Windows |
+|--------|-------------|----------------------|
+| `Sysmon.exe` | x86 (32-bit) | ❌ Driver blocked by HVCI |
+| `Sysmon64.exe` | x86-64 | ❌ Driver blocked by HVCI |
+| `Sysmon64a.exe` | ARM64 native | ✅ |
+
+### Result
+All three hosts reporting to `index=sysmon`: **DC, WIN11A, WIN11V** ✅
 
 ---
 
@@ -299,6 +342,9 @@ index=winlogs OR index=sysmon | stats count by host
 | Defender via GPO | Must set both Antivirus AND Real-Time Protection policies to fully disable |
 | Win11 Defender | May need manual disable at test time even with GPO applied |
 | Splunk TA inputs | TAs ship with inputs disabled — restart Splunk after app deployment for configs to load |
+| Sysmon on ARM64 | Use `Sysmon64a.exe` on ARM64 Windows (Parallels/Apple Silicon) — x86 driver blocked by HVCI |
+| Sysmon config XML | Course sysmonconfig.xml may have malformed XML comments — install without config if needed |
+| Sysmon broken install | Use `reg delete` + reboot to clean up a stuck Sysmon service before reinstalling |
 
 ---
 
@@ -308,7 +354,7 @@ index=winlogs OR index=sysmon | stats count by host
 - [x] Certer setup
 - [x] Win11A — domain joined
 - [x] Win11V — domain joined
-- [x] Sysmon — DC, Win11A, Win11V
+- [x] Sysmon — DC, Win11A, Win11V all live in index=sysmon ✅
 - [x] Azure account provisioned
 - [x] AWS account provisioned
 - [x] Windows Auditing & GPO configured
@@ -316,8 +362,7 @@ index=winlogs OR index=sysmon | stats count by host
 - [x] Windows Defender disabled via GPO
 - [x] C:\Transcripts folder created on DC
 - [x] gpupdate /force run on all Windows machines
-- [x] Splunk Enterprise deployed on DC — winlogs and sysmon live ✅
-- [ ] Splunk Universal Forwarder on Win11A / Win11V
+- [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises
 - [ ] Cloud telemetry lab exercises
