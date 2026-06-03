@@ -16,7 +16,7 @@ A hands-on home lab built to support structured offensive and defensive security
 |------|---------------------|
 | Hypervisor & Infrastructure | Proxmox VE 9.1, Parallels Desktop (Apple Silicon), Proxmox clustering |
 | Network Traffic Analysis | Malcolm 26.04.1, Zeek, Arkime, OpenSearch Dashboards |
-| SIEM | Splunk (in progress) |
+| SIEM | Splunk Enterprise 9.3.2 ✅ |
 | Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
 | Endpoint Telemetry | Sysmon (DC, Win11A, Win11V) |
 | Logging & Auditing | Windows Event Auditing, PowerShell Module/Script Block/Transcription logging via GPO |
@@ -35,7 +35,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | LinuxV | Ubuntu 22.04.5 | Proxmox node 1 | Vulnerable Linux target (intentionally unpatched) | N/A |
 | LinuxA | Ubuntu 22.04.5 | Proxmox node 1 | Patched Linux analyst/attacker machine | N/A |
 | Malcolm | Ubuntu 22.04.5 Server | Proxmox node 1 | PCAP & network traffic analysis | N/A |
-| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS | ✅ |
+| DC | Windows Server 2019 | Proxmox node 2 | Domain Controller + DNS + Splunk SIEM | ✅ |
 | Certer | Windows Server 2019 | Proxmox node 2 | Active Directory Certificate Services (ADCS) — Enterprise Root CA | — |
 | Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined | ✅ |
 | Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
@@ -87,7 +87,8 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] Azure account provisioned
 - [x] AWS account provisioned
 - [x] Windows Auditing & GPO configured (PowerShell logging, Transcription, Defender disabled)
-- [ ] Splunk SIEM configuration
+- [x] Splunk Enterprise deployed on DC — winlogs and sysmon telemetry live ✅
+- [ ] Splunk Universal Forwarder on Win11A / Win11V
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
 - [ ] Cloud telemetry lab exercises
