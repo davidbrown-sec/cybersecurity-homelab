@@ -18,7 +18,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | Network Traffic Analysis | Malcolm 26.04.1, Zeek, Arkime, OpenSearch Dashboards |
 | SIEM | Splunk Enterprise 9.3.2 ✅ |
 | Active Directory | Windows Server 2019, Domain Controller, ADCS (Enterprise Root CA) |
-| Endpoint Telemetry | Sysmon (DC, Win11A, Win11V) |
+| Endpoint Telemetry | Sysmon — all 3 Windows hosts live (DC, Win11A, Win11V) ✅ |
 | Logging & Auditing | Windows Event Auditing, PowerShell Module/Script Block/Transcription logging via GPO |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Cloud Security | Azure, AWS (accounts provisioned for course curriculum) |
@@ -40,7 +40,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | Win11A | Windows 11 | MacBook (Parallels) | Patched Windows workstation — domain joined | ✅ |
 | Win11V | Windows 11 | MacBook (Parallels) | Vulnerable Windows workstation — domain joined | ✅ |
 
-> Sysmon is installed on DC, Win11A, and Win11V. Certer does not require Sysmon per course curriculum.
+> Sysmon is installed on DC, Win11A, and Win11V. ARM64 Windows (Parallels) requires `Sysmon64a.exe` — the x86 binaries are blocked by HVCI. Certer does not require Sysmon per course curriculum.
 
 ---
 
@@ -83,12 +83,11 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] Certer — ADCS Enterprise Root CA
 - [x] Win11A — patched workstation, domain joined
 - [x] Win11V — vulnerable workstation, domain joined
-- [x] Sysmon — installed and enabled on DC, Win11A, Win11V
+- [x] Sysmon — DC, Win11A, Win11V all live in index=sysmon ✅
 - [x] Azure account provisioned
 - [x] AWS account provisioned
 - [x] Windows Auditing & GPO configured (PowerShell logging, Transcription, Defender disabled)
-- [x] Splunk Enterprise deployed on DC — winlogs and sysmon telemetry live ✅
-- [ ] Splunk Universal Forwarder on Win11A / Win11V
+- [x] Splunk Enterprise deployed — winlogs and sysmon live from all 3 hosts ✅
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
 - [ ] Cloud telemetry lab exercises
