@@ -21,7 +21,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | Endpoint Telemetry | Sysmon — all 3 Windows hosts live (DC, Win11A, Win11V) ✅ |
 | Linux Telemetry | Splunk UF + Laurel/auditd on LinuxV ✅ |
 | Kubernetes Monitoring | Minikube + Splunk OpenTelemetry Collector via HEC ✅ |
-| Cloud Telemetry | AWS CloudTrail via Splunk AWS TA ✅ |
+| Cloud Telemetry | AWS CloudTrail + Azure/Entra sign-in logs ✅ |
 | Logging & Auditing | Windows Event Auditing, PowerShell Module/Script Block/Transcription logging via GPO |
 | Linux Security | Ubuntu 22.04, privilege escalation techniques, kernel vulnerabilities |
 | Cloud Security | Azure, AWS (accounts provisioned for course curriculum) |
@@ -47,7 +47,7 @@ A hands-on home lab built to support structured offensive and defensive security
 
 ---
 
-## Telemetry Stack
+## Telemetry Stack — Complete ✅
 
 | Index | Source | Status |
 |-------|--------|--------|
@@ -56,7 +56,7 @@ A hands-on home lab built to support structured offensive and defensive security
 | `linux` | LinuxV (Laurel/auditd) | ✅ Live |
 | `kube` | LinuxV (Minikube audit logs) | ✅ Live |
 | `aws` | AWS CloudTrail | ✅ Live |
-| `azure` | Azure/Entra telemetry | 🔜 Pending |
+| `azure` | Azure/Entra sign-in logs | ✅ Live |
 
 ---
 
@@ -107,6 +107,7 @@ See [`lab-journal.md`](./lab-journal.md) for a detailed log of the build process
 - [x] LinuxV Laurel telemetry — index=linux live ✅
 - [x] Kubernetes monitoring — Minikube audit logs via HEC, index=kube live ✅
 - [x] AWS CloudTrail — index=aws live ✅
-- [ ] Cloud telemetry — Azure/Entra
+- [x] Azure/Entra telemetry — index=azure live ✅
 - [ ] Domain user accounts
 - [ ] PCAP lab exercises with Malcolm/Zeek
+- [ ] Active Directory attack & defense labs
