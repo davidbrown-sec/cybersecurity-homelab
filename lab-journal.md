@@ -43,21 +43,13 @@
 ### Architecture
 AWS CloudTrail trail configured to log all management events across all regions, writing to S3. Splunk AWS TA (v8.1.2) polls the S3 bucket via Generic S3 input and ingests logs into the `aws` index.
 
-### AWS Setup
-- CloudTrail trail: multi-region, home region US East (Ohio)
-- Logging to S3 bucket
-- Status: Logging ✅
+### Setup
+- CloudTrail trail: multi-region, home region US East (Ohio), logging to S3
+- Splunk: Generic S3 input, `sourcetype=aws:cloudtrail`, `index=aws`
 
-### Splunk Setup
-- App: Splunk Add-on for AWS (v8.1.2)
-- Input type: Generic S3
-- Data type: CloudTrail
-- Source type: `aws:cloudtrail`
-- Index: `aws`
-
-### Problem & fix — wrong source type
-Initial input was created with `sourcetype=aws:s3:accesslogs`. The Splunk AWS TA UI does not allow editing source type after creation.  
-**Fix:** Delete the input and recreate with `sourcetype=aws:cloudtrail`.
+### Problem & fix
+Initial input created with `sourcetype=aws:s3:accesslogs`. Source type cannot be edited after creation.  
+**Fix:** Delete and recreate with `sourcetype=aws:cloudtrail`.
 
 ### Result
 80 CloudTrail events in `index=aws` ✅  
@@ -65,7 +57,20 @@ Fields: `awsRegion`, `eventCategory: Management`, `eventName`, `eventSource`, `e
 
 ---
 
-## Telemetry Stack
+## Phase 16 — Azure/Entra Telemetry
+
+**Date:** 2026-06-03
+
+### Architecture
+Azure/Entra ID sign-in and audit logs ingested into Splunk via the Splunk Add-on for Microsoft Cloud Services. Logs land in the `azure` index.
+
+### Result
+43 Azure/Entra events in `index=azure` ✅  
+Fields: `category: MicrosoftServicePrincipalSignInLogs`, `operationName: Sign-in activity`, `resultSignature: SUCCESS`, `callerIpAddress`, `tenantId`
+
+---
+
+## Telemetry Stack — Complete ✅
 
 | Index | Source | Status |
 |-------|--------|--------|
@@ -74,7 +79,9 @@ Fields: `awsRegion`, `eventCategory: Management`, `eventName`, `eventSource`, `e
 | `linux` | LinuxV (Laurel/auditd) | ✅ |
 | `kube` | LinuxV (Minikube audit logs) | ✅ |
 | `aws` | AWS CloudTrail | ✅ |
-| `azure` | Azure/Entra (pending) | 🔜 |
+| `azure` | Azure/Entra sign-in logs | ✅ |
+
+All 6 indexes live. Telemetry collection phase complete.
 
 ---
 
@@ -119,6 +126,7 @@ Fields: `awsRegion`, `eventCategory: Management`, `eventName`, `eventSource`, `e
 - [x] LinuxV Laurel telemetry — index=linux live ✅
 - [x] Kubernetes monitoring — index=kube live ✅
 - [x] AWS CloudTrail — index=aws live ✅
-- [ ] Cloud telemetry — Azure/Entra
+- [x] Azure/Entra telemetry — index=azure live ✅
 - [ ] Create domain users in AD
 - [ ] PCAP lab exercises
+- [ ] Active Directory attack & defense labs
