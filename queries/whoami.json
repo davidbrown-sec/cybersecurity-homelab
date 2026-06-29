@@ -1,0 +1,35 @@
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "wildcard": {
+            "data.win.eventdata.commandLine": {
+              "value": "*whoami*",
+              "case_insensitive": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  "size": 100,
+  "_source": [
+    "timestamp",
+    "agent.name",
+    "data.win.eventdata.commandLine",
+    "data.win.eventdata.parentCommandLine",
+    "data.win.eventdata.user",
+    "data.win.eventdata.processId",
+    "data.win.eventdata.parentProcessId",
+    "rule.description",
+    "rule.level"
+  ],
+  "sort": [
+    {
+      "timestamp": {
+        "order": "desc"
+      }
+    }
+  ]
+}
