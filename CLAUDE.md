@@ -2,8 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Status
+## Project Purpose
 
-This repository is currently empty. No source files, build system, or tooling have been added yet.
+This project builds repeatable workflows for complex security analysis tasks. There are two primary workflows:
 
-Update this file as the project takes shape — add build commands, architecture notes, and any conventions once they're established.
+1. **Threat intel processing** — ingest reports, extract TTPs, create simulation plans
+2. **Multi-source investigation** — correlate endpoint and cloud logs
+
+## Log Sources
+
+- Windows Security events
+- Sysmon events
+- Azure AD sign-in logs
+- Azure AD audit logs
