@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hayabusa": {
+      "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+      "args": ["/Volumes/Cyber Files/ai-defense-labs/mcp-hayabusa/server.py"]
+    }
+  }
+}
