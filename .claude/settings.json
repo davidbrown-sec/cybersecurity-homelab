@@ -4,5 +4,69 @@
       "command": "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
       "args": ["/Volumes/Cyber Files/ai-defense-labs/mcp-hayabusa/server.py"]
     }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/check-prereqs.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/check-sensitive.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/validate-rule.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude finished\" with title \"Claude Code\"'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Read(.env*)",
+      "Write(.env*)",
+      "Edit(.env*)",
+      "Read(*.key)",
+      "Write(*.key)",
+      "Edit(*.key)",
+      "Read(*.pem)",
+      "Write(*.pem)",
+      "Edit(*.pem)",
+      "Read(secrets/*)",
+      "Write(secrets/*)",
+      "Edit(secrets/*)"
+    ]
+  },
+  "costThreshold": {
+    "warningAt": 5.00,
+    "hardLimit": 20.00
   }
 }
