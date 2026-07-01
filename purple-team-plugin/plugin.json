@@ -1,0 +1,16 @@
+{
+  "name": "purple-team-workflow",
+  "version": "1.0.0",
+  "description": "End-to-end purple team workflow: threat intel ingestion, Atomic Red Team mapping, Hayabusa detection, Wazuh SIEM validation, and cross-tool gap analysis",
+  "author": "David Brown",
+  "components": {
+    "commands": ["ingest-ti", "query", "purple-loop"],
+    "agents": ["atomic-mapper", "endpoint-analyst", "cloud-analyst"],
+    "hooks": true,
+    "mcp": true
+  },
+  "dependencies": {
+    "external": ["hayabusa", "defuddle-cli", "Atomic Red Team (Invoke-AtomicRedTeam)"],
+    "mcp-servers": ["hayabusa"]
+  }
+}
