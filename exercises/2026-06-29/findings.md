@@ -68,11 +68,35 @@ Queried `wazuh-alerts-*` for win11v2, 23:09:50–23:12:40 UTC, to confirm this r
 
 Rule 61625 tags this alert as **T1055 (Process Injection)** / tactics *Defense Evasion, Privilege Escalation* — but no injection occurred here. The actual technique is **T1036.003 (Masquerading: Rename System Utilities)**: the rule appears to fire on process name pattern-matching (`lsass` in path) rather than validating `OriginalFileName`/hash against the genuine `lsass.exe`. Detection efficacy is fine (it fired, high severity, emailed) but the MITRE tag routes triage/reporting toward the wrong technique.
 
+## Hayabusa Detection Validation (Sysmon.evtx)
+
+Scanned `exercises/2026-06-29/evtx/Sysmon.evtx` with Hayabusa (Sigma + Hayabusa-native rules, 4,947 rules loaded). Both technique events were detected, and — critically — **correctly MITRE-tagged**, unlike Wazuh rule 61625.
+
+### T1036.003 event (RecordID 12079, 23:10:19.756719Z — the `lsass.exe` rename)
+
+| Rule | Level | Ruletype | ATT&CK Tags |
+|---|---|---|---|
+| LOLBAS Renamed | high | Hayabusa-native | (untagged, but description explicitly targets `OriginalFileName` mismatch on renamed default Windows binaries) |
+| System File Execution Location Anomaly | high | Sigma | `attack.stealth`, **`attack.t1036`** |
+| Potential Defense Evasion Via Binary Rename | medium | Sigma | `attack.stealth`, **`attack.t1036.003`** |
+
+### T1547.001 event (RecordID 12069, 23:10:05.089510Z — the `HKCU...Run` reg add)
+
+| Rule | Level | Ruletype | ATT&CK Tags |
+|---|---|---|---|
+| Potential Persistence Attempt Via Run Keys Using Reg.EXE | medium | Sigma | `attack.privilege-escalation`, `attack.persistence`, **`attack.t1547.001`** |
+| Direct Autorun Keys Modification | medium | Sigma | `attack.privilege-escalation`, `attack.persistence`, **`attack.t1547.001`** |
+
+**Conclusion:** Hayabusa's Sigma rule library correctly tags this behavior as T1036.003/T1036 and T1547.001 across 5 independent rules. This confirms Wazuh rule 61625's `T1055` (Process Injection) tag is a genuine mapping defect in that rule, not an ambiguous edge case — the community Sigma ruleset treats this pattern unambiguously as masquerading.
+
+**Noise observed (out of scope):** `Security.evtx` and `Sysmon.evtx` cover multiple lab sessions (2026-06-18 through 2026-07-01), not just this exercise. Unrelated high-severity hits exist from other dates/modules — e.g. `User Added To Local Admin Grp` (2026-06-18, lab provisioning) and `Renamed PsExec Service Execution` / `Potential Defense Evasion Via Rename Of Highly Relevant Binaries` on `NotPSEXECSVC.exe` (2026-06-24, unrelated PsExec-rename exercise). Not investigated further here — flagged only so they aren't mistaken for this exercise's activity if the raw EVTX is reviewed later.
+
 ## Follow-up Actions
 
 - [x] Check whether this activity generated a Wazuh alert already, or only appears in raw archives → **confirmed alert fired** (rule 61625, level 12)
-- [ ] Fix rule 61625's MITRE mapping: retag to T1036.003 (Masquerading), or split into two rules — one for name-based anomaly (current behavior) and one for confirmed rename-masquerade (Image/OriginalFileName mismatch + hash match to a different legitimate binary)
+- [x] Cross-validate against Hayabusa/Sysmon.evtx → **confirmed**, 5 rules fired, all correctly tagged T1036.003/T1036/T1547.001 — strengthens the case that Wazuh rule 61625's T1055 tag is wrong
+- [ ] Fix rule 61625's MITRE mapping: retag to T1036.003 (Masquerading), or split into two rules — one for name-based anomaly (current behavior) and one for confirmed rename-masquerade (Image/OriginalFileName mismatch + hash match to a different legitimate binary). Reference Hayabusa's "Potential Defense Evasion Via Binary Rename" Sigma rule as a model for correct tagging.
 - [ ] Confirm Sysmon config captures `OriginalFileName` and `Hashes` fields on all monitored endpoints (required for this detection to fire reliably)
 - [ ] Consider a dedicated correlation rule: alert when `data.win.eventdata.image` basename is a sensitive system process name (`lsass.exe`, `svchost.exe`, `csrss.exe`, etc.) AND path is outside `System32`/`SysWOW64`, OR `originalFileName` doesn't match the `image` basename — tagged explicitly as T1036.003
 - [ ] Cross-reference PID 11208 (parent powershell.exe) for the full session — confirm this maps to Atomic Red Team `T1036.003` Test #1/#5 execution per `threat-intel.md`
-- [ ] Update `report.md` with this confirmed technique execution, detection status, and the T1055/T1036.003 mapping gap
+- [x] Update `report.md` with this confirmed technique execution, detection status, and the T1055/T1036.003 mapping gap
