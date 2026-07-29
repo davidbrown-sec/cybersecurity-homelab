@@ -6,7 +6,7 @@ A hands-on home lab built to support structured offensive and defensive security
 
 ## Lab Network Diagram
 
-![https://github.com/davidbrown-sec/cybersecurity-homelab/blob/42a6039b8e2543a3202d02a20dee976e798fbe7a/assets/home-lab-network-topology-public_1.png])
+![Home Lab Network Diagram](assets/home-lab-network-topology-public_1.png)
 
 ---
 
