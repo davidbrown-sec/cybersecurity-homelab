@@ -6,7 +6,7 @@ A hands-on home lab built to support structured offensive and defensive security
 
 ## Lab Network Diagram
 
-![Home Lab Network Diagram](assets/home-lab-network-topology-final.png)
+![assets/home-lab-network-topology-public_1.png])
 
 ---
 
